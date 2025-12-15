@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ExternalLink, RefreshCw, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import DashboardLayout from '@/components/layout/DashboardLayout';
 
 interface Flow {
   id: string;
@@ -124,7 +125,8 @@ export default function WhatsAppFlowManager() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-6">
+  <DashboardLayout>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
@@ -335,5 +337,6 @@ export default function WhatsAppFlowManager() {
         </div>
       </div>
     </div>
+  </DashboardLayout>
   );
 }

@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-
+import dotenv from 'dotenv';
+dotenv.config();
 let isConnected = false;
 
 export async function connectToMongoDB(): Promise<void> {

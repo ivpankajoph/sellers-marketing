@@ -2,13 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Megaphone, 
-  GitBranch, 
-  Users, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Megaphone,
+  GitBranch,
+  Users,
+  Settings,
   LogOut,
   Menu,
   Bell,
@@ -23,22 +23,26 @@ import {
   Clock,
   UserPlus,
   UserCog,
-  Workflow
+  Workflow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 interface Chat {
   id: string;
@@ -46,7 +50,11 @@ interface Chat {
   unreadCount: number;
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [location, setLocation] = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -68,7 +76,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (chat.unreadCount <= 0) continue;
         if (chat.lastInboundMessageTime) {
           const lastInbound = new Date(chat.lastInboundMessageTime);
-          const hoursDiff = (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
+          const hoursDiff =
+            (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
           if (hoursDiff <= 24) {
             totalUnread += chat.unreadCount;
           }
@@ -111,7 +120,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { label: "Schedule Messages", href: "/campaigns/schedule" },
         { label: "Single Message", href: "/campaigns/single" },
         // { label: "Reports", href: "/campaigns/report" },
-      ]
+      ],
     },
     {
       icon: GitBranch,
@@ -130,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // { label: "Auto Leads", href: "/automation/leads" },
         { label: "Follow-up", href: "/automation/follow-up" },
         // { label: "New Lead Alert", href: "/automation/new-leads" },
-      ]
+      ],
     },
     {
       icon: LayoutGrid,
@@ -147,7 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { label: "Add Template", href: "/templates/add" },
         // { label: "Template Status", href: "/templates/status" },
         { label: "Manage Templates", href: "/templates/manage" },
-      ]
+      ],
     },
     {
       icon: FileText,
@@ -156,9 +165,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       subItems: [
         { label: "Billing & Credits", href: "/settings/billing" },
-         { label: "Credits", href: "/reports/credits" },
+        { label: "Credits", href: "/reports/credits" },
         { label: "Spending", href: "/reports/spending" },
-      ]
+        { label: "AI Tokens", href: "/aitokens" },
+        { label: "Whatsapp Tokens", href: "/whatsapptokens" },
+      ],
     },
     {
       icon: Bot,
@@ -171,7 +182,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // { label: "Agent Mapping", href: "/ai/map" },
         { label: "Pre-filled Text", href: "/ai/prefilled" },
         // { label: "AI Reports", href: "/ai/reports" },
-      ]
+      ],
     },
     {
       icon: Facebook,
@@ -181,7 +192,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       subItems: [
         { label: "Lead Forms", href: "/facebook/forms" },
         { label: "Leads", href: "/facebook/leads" },
-      ]
+      ],
     },
     {
       icon: Workflow,
@@ -204,10 +215,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
         { label: "User Activity", href: "/reports/user-activity" },
         { label: "Blocked Contacts", href: "/reports/blocked" },
-      
+
         { label: "User Engagement", href: "/reports/user-engagement" },
- 
-      ]
+      ],
     },
     {
       icon: Users,
@@ -233,16 +243,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // { label: "WhatsApp Number", href: "/settings/whatsapp" },
         { label: "Profile Details", href: "/settings/profile" },
         { label: "Webhook & API", href: "/settings/api" },
-      
-      ]
+      ],
     },
-   
   ];
 
   const isSystemUser = user?.pageAccess && user.pageAccess.length > 0;
-  const isAdmin = user?.role === 'super_admin' || user?.role === 'sub_admin';
-  
-  const filteredNavStructure = navStructure.filter(item => {
+  const isAdmin = user?.role === "super_admin" || user?.role === "sub_admin";
+
+  const filteredNavStructure = navStructure.filter((item) => {
     if (!isSystemUser) {
       return true;
     }
@@ -256,7 +264,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
 
   const NavItem = ({ item }: { item: any }) => {
-    const isActive = location === item.href || (item.subItems && item.subItems.some((sub: any) => location === sub.href));
+    const isActive =
+      location === item.href ||
+      (item.subItems &&
+        item.subItems.some((sub: any) => location === sub.href));
     const [isOpen, setIsOpen] = useState(isActive);
     const itemRef = useRef<HTMLDivElement>(null);
 
@@ -264,7 +275,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setIsOpen(open);
       if (open && itemRef.current) {
         setTimeout(() => {
-          itemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          itemRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
         }, 50);
       }
     };
@@ -272,14 +286,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (item.subItems) {
       return (
         <div ref={itemRef}>
-          <Collapsible open={isOpen} onOpenChange={handleToggle} className="space-y-1">
+          <Collapsible
+            open={isOpen}
+            onOpenChange={handleToggle}
+            className="space-y-1"
+          >
             <CollapsibleTrigger asChild>
-              <div 
+              <div
                 className={`
                   flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer select-none
-                  ${isActive 
-                    ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
-                    : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                  ${
+                    isActive
+                      ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
+                      : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                   }
                 `}
               >
@@ -287,18 +306,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <item.icon className="h-4 w-4" />
                   {item.label}
                 </div>
-                {isOpen ? <ChevronDown className="h-3 w-3 opacity-50" /> : <ChevronRight className="h-3 w-3 opacity-50" />}
+                {isOpen ? (
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 opacity-50" />
+                )}
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent className="pl-9 space-y-1 animate-in slide-in-from-top-2 duration-200">
               {item.subItems.map((sub: any) => (
                 <Link key={sub.href} href={sub.href}>
-                  <div 
+                  <div
                     className={`
                       block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
-                      ${location === sub.href 
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-                        : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                      ${
+                        location === sub.href
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                          : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                       }
                     `}
                   >
@@ -314,12 +338,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     return (
       <Link href={item.href}>
-        <div 
+        <div
           className={`
             flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
-            ${isActive 
-              ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-              : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            ${
+              isActive
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
             }
           `}
         >
@@ -344,8 +369,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <MessageSquare className="h-6 w-6 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="font-heading font-bold text-lg leading-none tracking-tight">WhatsApp</h1>
-          <span className="text-xs text-sidebar-foreground/60">Business API</span>
+          <h1 className="font-heading font-bold text-lg leading-none tracking-tight">
+            WhatsApp
+          </h1>
+          <span className="text-xs text-sidebar-foreground/60">
+            Business API
+          </span>
         </div>
       </div>
 
@@ -357,9 +386,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="p-4 border-t border-sidebar-border shrink-0">
         {/* <div className="p-4 rounded-lg bg-sidebar-accent/50"> */}
-          {/* <h4 className="text-sm font-medium text-sidebar-foreground mb-1">Need Help?</h4> */}
-          {/* <p className="text-xs text-sidebar-foreground/60 mb-3">Check our documentation for guides.</p> */}
-          {/* <Button size="sm" variant="secondary" className="w-full text-xs">Documentation</Button> */}
+        {/* <h4 className="text-sm font-medium text-sidebar-foreground mb-1">Need Help?</h4> */}
+        {/* <p className="text-xs text-sidebar-foreground/60 mb-3">Check our documentation for guides.</p> */}
+        {/* <Button size="sm" variant="secondary" className="w-full text-xs">Documentation</Button> */}
         {/* </div> */}
       </div>
     </div>
@@ -383,15 +412,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-sidebar border-r border-sidebar-border text-black">
+              <SheetContent
+                side="left"
+                className="p-0 w-64 bg-sidebar border-r border-sidebar-border text-black"
+              >
                 <NavContent />
               </SheetContent>
             </Sheet>
-            
+
             <div className="relative hidden sm:block w-96">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-black" />
-              <Input 
-                placeholder="Search messages, contacts, campaigns..." 
+              <Input
+                placeholder="Search messages, contacts, campaigns..."
                 className="pl-9 bg-secondary/50 border-none focus-visible:ring-1"
               />
             </div>
@@ -405,17 +437,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                <Button
+                  variant="ghost"
+                  className="relative h-9 w-9 rounded-full"
+                >
                   <Avatar className="h-9 w-9 border border-border">
-                    <AvatarImage src="https://github.com/shadcn.png" alt="@user" />
+                    <AvatarImage
+                      src="https://github.com/shadcn.png"
+                      alt="@user"
+                    />
                     <AvatarFallback>CN</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56 bg-white" align="end" forceMount>
+              <DropdownMenuContent
+                className="w-56 bg-white"
+                align="end"
+                forceMount
+              >
                 <DropdownMenuLabel className="font-normal bg-white">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">WhatsApp Admin</p>
+                    <p className="text-sm font-medium leading-none">
+                      WhatsApp Admin
+                    </p>
                     <p className="text-xs leading-none text-muted-foreground">
                       {user?.email || "admin@whatsapp.com"}
                     </p>
@@ -431,7 +475,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="text-destructive focus:text-destructive cursor-pointer"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>
@@ -441,9 +488,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6">
-          {children}
-        </main>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
     </div>
   );
