@@ -282,7 +282,7 @@ const UserSchema = new Schema({
   username: { type: String,  unique: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
-
+  phone: { type: String },
   email: { type: String },
   role: { type: String, default: 'user' },
   createdAt: { type: String, required: true },

@@ -1,3 +1,4 @@
+
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -77,7 +78,8 @@ import LeadAssignmentReports from "@/pages/lead-assignment-reports";
 import UserActivityReports from "@/pages/user-activity-reports";
 import TokenCardMain from "./pages/AItokens";
 import WhatsTokenCardMain from "./pages/WhatsappTokens";
-
+import ContactUsageDetail from "./pages/ContactUsageDetails";
+import AiUsageDashboard from "./pages/AiUsageDashboard";
 function ProtectedRoute({
   component: Component,
 }: {
@@ -306,6 +308,15 @@ function Router() {
       </Route>
       <Route path="/whatsapptokens">
         {() => <ProtectedRoute component={WhatsTokenCardMain} />}
+      </Route>
+
+      <Route path="/usagedashboard">
+        {() => <ProtectedRoute component={AiUsageDashboard} />}
+      </Route>
+
+
+      <Route path="/contactusagedashboard">
+        {() => <ProtectedRoute component={ContactUsageDetail} />}
       </Route>
       {/* User Management */}
       <Route path="/user-management">

@@ -1,11 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
 import { findUserById } from './auth.service';
-import { OTP, User } from '../storage/mongodb.adapter';
+import { OTP } from '../storage/mongodb.adapter';
 import axios from 'axios';
-
+import passport from '../auth/passport';
 import jwt from 'jsonwebtoken';
-import passport from '../auth/passport.ts';
 
 const router = Router();
 
@@ -34,6 +33,7 @@ export function getUser(req: Request): authService.AuthUser | null {
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
+
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
@@ -48,7 +48,7 @@ router.post('/login', async (req: Request, res: Response) => {
       success: true,
       user: {
         id: user.id,
-   
+        username: user.username,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -63,7 +63,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const {  password, name, email,phone } = req.body;
+    const { username, password, name, email,phone } = req.body;
 
     if ( !password || !name) {
       return res.status(400).json({ error: 'Username, password, and name are required' });
@@ -73,7 +73,7 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const user = await authService.createUser( password, name, email,phone);
+    const user = await authService.createUser(username, password, name, email,phone);
 
     if (!user) {
       return res.status(409).json({ error: 'Username already exists' });
@@ -83,9 +83,8 @@ router.post('/register', async (req: Request, res: Response) => {
       success: true,
       user: {
         id: user.id,
-
+        username: user.username,
         name: user.name,
-        phone:user.phone,
         email: user.email,
         role: user.role,
       }
@@ -165,7 +164,7 @@ router.put('/update-profile', requireAuth, async (req: Request, res: Response) =
       success: true,
       user: {
         id: updatedUser.id,
-
+        username: updatedUser.username,
         name: updatedUser.name,
         email: updatedUser.email,
         role: updatedUser.role,
@@ -179,37 +178,11 @@ router.put('/update-profile', requireAuth, async (req: Request, res: Response) =
   }
 });
 
-
-
-// router.post('/register', async (req, res) => {
-//   try {
-//     const { name, email, password, phone } = req.body;
-
-//     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
-//     if (existingUser) {
-//       return res.status(400).json({ message: 'User already exists' });
-//     }
-
-//     const user = await User.create({ name, email, password, phone, phoneVerified: true });
-//     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
-
-//     res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
-//   } catch (error) {
-//     res.status(500).json({ message: 'Registration failed', error: error.message });
-//   }
-// });
-
-// Login
-
-
-
-// Send OTP via WhatsApp
 router.post('/send-otp', async (req, res) => {
   try {
     const { phone } = req.body;
-    console.log("Phone number received for OTP:", phone);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
+    
     // Save OTP to database
     await OTP.findOneAndDelete({ phone });
     await OTP.create({
@@ -217,56 +190,54 @@ router.post('/send-otp', async (req, res) => {
       otp,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
     });
-    await axios.post(
-      `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: phone, // 919911064724
-        type: "template",
-        template: {
-          name: "life_changing_networks_auth",
-          language: { code: "en" },
-          components: [
+    
+    // Send via WhatsApp Business API
+  await axios.post(
+  `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
+  {
+    messaging_product: "whatsapp",
+    to: phone, // 919911064724
+    type: "template",
+    template: {
+      name: "life_changing_networks_auth",
+      language: { code: "en" },
+      components: [
+        {
+          type: "body",
+          parameters: [
             {
-              type: "body",
-              parameters: [
-                {
-                  type: "text",
-                  text: otp
-                }
-              ]
-            },
+              type: "text",
+              text: otp
+            }
+          ]
+        },
+        {
+          type: "button",
+          sub_type: "url",
+          index: 0,
+          parameters: [
             {
-              type: "button",
-              sub_type: "url",
-              index: 0,
-              parameters: [
-                {
-                  type: "text",
-                  text: otp
-                }
-              ]
+              type: "text",
+              text: otp
             }
           ]
         }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.SYSTEM_USER_TOKEN_META}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+      ]
+    }
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.SYSTEM_USER_TOKEN_META}`,
+      "Content-Type": "application/json"
+    }
+  }
+);
 
-
-
-
-
+    
     res.json({ message: 'OTP sent successfully' });
-  } catch (error) {
-    const err = error as any;
-    console.error('OTP Send Error:', err.response?.data || err.message);
-    res.status(500).json({ message: 'Failed to send OTP', error: err.message });
+  } catch (error:any) {
+    console.error('OTP Send Error:', error.response?.data || error.message);
+    res.status(500).json({ message: 'Failed to send OTP', error: error.message });
   }
 });
 
@@ -274,39 +245,39 @@ router.post('/send-otp', async (req, res) => {
 router.post('/verify-otp', async (req, res) => {
   try {
     const { phone, otp } = req.body;
-
+    
     const otpRecord = await OTP.findOne({ phone, otp });
-
+    
     if (!otpRecord) {
       return res.status(400).json({ message: 'Invalid OTP' });
     }
-
+    
     if (otpRecord.expiresAt < new Date()) {
       return res.status(400).json({ message: 'OTP expired' });
     }
-
+    
     otpRecord.verified = true;
     await otpRecord.save();
-
+    
     res.json({ message: 'OTP verified successfully' });
-  } catch (error) {
-    const err = error as any;
-    res.status(500).json({ message: 'Verification failed', error: err.message });
+  } catch (error:any) {
+    res.status(500).json({ message: 'Verification failed', error: error.message });
   }
 });
 
 // Google OAuth
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-router.get('/google/callback',
+router.get('/google/callback', 
   passport.authenticate('google', { failureRedirect: 'http://localhost:5173/login' }),
   (req, res) => {
     if (!req.user) {
       return res.redirect('http://localhost:5173/login');
     }
-    const token = jwt.sign({ id: req.user.id }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
+    const token = jwt.sign({ id: (req.user as any)._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
     res.redirect(`http://localhost:5173/auth/success?token=${token}`);
   }
 );
+
 
 export default router;

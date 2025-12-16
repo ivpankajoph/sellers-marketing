@@ -1,48 +1,41 @@
-
 import { useState } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageSquare, Lock, Mail, AlertCircle, User, AtSign, Phone, Chrome } from "lucide-react";
+import { MessageSquare, Lock, Mail, AlertCircle, User, AtSign, Chrome, Phone } from "lucide-react";
+import { toast } from "sonner";
 
 export default function Login() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("login");
+  const { login, register } = useAuth();
+  const [, setLocation] = useLocation();
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
 
-  // MongoDB API endpoints (replace with your backend URL)
-  const API_URL = "http://localhost:8080/api";
-
-  const handleLogin = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        alert("Welcome back!");
-        window.location.href = "/";
+      const success = await login(identifier, password);
+      if (success) {
+        toast.success("Welcome back!");
+        setLocation("/");
       } else {
-        setError(data.message || "Invalid credentials");
+        setError("Invalid email/username or password");
       }
     } catch (err) {
       setError("Login failed. Please try again.");
@@ -51,16 +44,8 @@ export default function Login() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      // Redirect to Google OAuth
-      window.location.href = `${API_URL}/auth/google`;
-    } catch (err) {
-      setError("Google sign-in failed");
-      setLoading(false);
-    }
-  };
+
+  const API_URL = "http://localhost:8080/api";
 
   const sendOTP = async () => {
     if (!phone || phone.length < 10) {
@@ -89,6 +74,18 @@ export default function Login() {
     } catch (err) {
       setError("Failed to send OTP. Please try again.");
     } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      // Redirect to Google OAuth
+      window.location.href = `${API_URL}/auth/google`;
+    } catch (err) {
+      setError("Google sign-in failed");
       setLoading(false);
     }
   };
@@ -220,7 +217,7 @@ export default function Login() {
                     />
                   </div>
                 </div>
-                <Button 
+                <Button
                   onClick={handleLogin}
                   className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
                   disabled={loading}
@@ -369,7 +366,7 @@ export default function Login() {
                     />
                   </div>
                 </div>
-                <Button 
+                <Button
                   onClick={handleRegister}
                   className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
                   disabled={loading || !otpVerified}

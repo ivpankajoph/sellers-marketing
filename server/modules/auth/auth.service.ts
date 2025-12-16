@@ -4,10 +4,10 @@ import { SystemUser } from '../users/user.model';
 
 export interface AuthUser {
   id: string;
-
+  username: string;
   name: string;
-  phone?: string;
   email?: string;
+  phone?: string;
   role: string;
   pageAccess?: string[];
 }
@@ -59,75 +59,39 @@ export async function findUserById(id: string): Promise<any | null> {
   }
 }
 
-export async function createUser(
-  password: string,
-  name: string,
-  email?: string,
-  phone?: string
-): Promise<AuthUser | null> {
-  console.log("[Auth][createUser] Called", {
-    hasEmail: !!email,
-    hasPhone: !!phone,
-    name,
-  });
-
+export async function createUser(username: string, password: string, name: string, email?: string , phone?: string): Promise<AuthUser | null> {
   try {
-    if (!email && !phone) {
-      console.warn("[Auth][createUser] Missing email and phone");
-      return null;
-    }
-
-    console.log("[Auth][createUser] Checking existing user...");
     const existingUser = await User.findOne({ email });
-
     if (existingUser) {
-      console.warn("[Auth][createUser] User already exists", {
-        userId: existingUser.id,
-        email,
-      });
       return null;
     }
 
-    console.log("[Auth][createUser] Generating user ID...");
     const id = crypto.randomUUID();
-
-    console.log("[Auth][createUser] Hashing password...");
     const hashedPassword = hashPassword(password);
-
-    console.log("[Auth][createUser] Creating user in DB...");
+    
     const user = await User.create({
       id,
-      email,
-      phone,
+      username,
       password: hashedPassword,
       name,
-      role: "user",
+      email: email || '',
+      role: 'user',
+      phone: phone || '',
       createdAt: new Date().toISOString(),
-    });
-
-    console.log("[Auth][createUser] User created successfully", {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
     });
 
     return {
       id: user.id,
-      phone: user.phone,
+      username: user.username,
       name: user.name,
       email: user.email,
       role: user.role,
     };
-  } catch (error: any) {
-    console.error("[Auth][createUser] Failed", {
-      message: error.message,
-      stack: error.stack,
-    });
-
+  } catch (error) {
+    console.error('[Auth] Error creating user:', error);
     return null;
   }
 }
-
 
 export async function updateUserProfile(
   userId: string, 
@@ -141,7 +105,7 @@ export async function updateUserProfile(
       await user.save();
       return {
         id: user.id,
-
+        username: user.username,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -155,7 +119,7 @@ export async function updateUserProfile(
       await systemUser.save();
       return {
         id: systemUser.id,
-    
+        username: systemUser.username,
         name: systemUser.name,
         email: systemUser.email,
         role: systemUser.role,
@@ -179,7 +143,7 @@ export async function validateLogin(username: string, password: string): Promise
       }
       return {
         id: user.id,
-
+        username: user.username,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -196,7 +160,7 @@ export async function validateLogin(username: string, password: string): Promise
       }
       return {
         id: systemUser.id,
-
+        username: systemUser.username,
         name: systemUser.name,
         email: systemUser.email,
         role: systemUser.role,

@@ -246,10 +246,10 @@ export default function WebhookAPI() {
               <Key className="h-4 w-4" />
               Facebook
             </TabsTrigger>
-            <TabsTrigger value="webhook" className="gap-2">
+            {/* <TabsTrigger value="webhook" className="gap-2">
               <Activity className="h-4 w-4" />
               Webhook
-            </TabsTrigger>
+            </TabsTrigger> */}
           </TabsList>
 
           <TabsContent value="whatsapp" className="space-y-4">

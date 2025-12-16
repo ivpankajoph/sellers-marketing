@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import {
@@ -45,6 +45,346 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  app.get("/api/messages/stats/:contactId", async (req, res) => {
+    try {
+      const { contactId } = req.params;
+      const { filter } = req.query;
+
+      if (!contactId) {
+        return res.status(400).json({ message: "contactId is required" });
+      }
+
+      const now = new Date();
+      let startDate: Date | null = null;
+
+      if (filter === "today") {
+        startDate = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          0, 0, 0
+        ));
+      }
+
+      if (filter === "week") {
+        startDate = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() - 7,
+          0, 0, 0
+        ));
+      }
+
+      if (filter === "month") {
+        startDate = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth() - 1,
+          now.getUTCDate(),
+          0, 0, 0
+        ));
+      }
+
+      /* ---------- AGGREGATION ---------- */
+      const pipeline: any[] = [
+        {
+          $match: { contactId }
+        },
+        {
+          // 🔥 convert timestamp safely
+          $addFields: {
+            messageDate: {
+              $cond: [
+                { $eq: [{ $type: "$timestamp" }, "string"] },
+                { $toDate: "$timestamp" },
+                "$timestamp"
+              ]
+            }
+          }
+        }
+      ];
+
+      if (startDate) {
+        pipeline.push({
+          $match: {
+            messageDate: { $gte: startDate }
+          }
+        });
+      }
+
+      pipeline.push(
+        {
+          $project: {
+            direction: 1,
+            tokenCount: {
+              $cond: [
+                { $ifNull: ["$content", false] },
+                { $strLenCP: "$content" },
+                0
+              ]
+            }
+          }
+        },
+        {
+          $group: {
+            _id: "$direction",
+            messages: { $sum: 1 },
+            tokens: { $sum: "$tokenCount" }
+          }
+        }
+      );
+
+      const stats = await mongodb.Message.aggregate(pipeline);
+
+      /* ---------- FORMAT ---------- */
+      let inboundMessages = 0,
+        outboundMessages = 0,
+        inboundTokens = 0,
+        outboundTokens = 0;
+
+      stats.forEach(s => {
+        if (s._id === "inbound") {
+          inboundMessages = s.messages;
+          inboundTokens = s.tokens;
+        }
+        if (s._id === "outbound") {
+          outboundMessages = s.messages;
+          outboundTokens = s.tokens;
+        }
+      });
+
+      res.json({
+        contactId,
+        filter: filter || "all",
+        totalMessages: inboundMessages + outboundMessages,
+        inboundMessages,
+        outboundMessages,
+        totalTokens: inboundTokens + outboundTokens,
+        inboundTokens,
+        outboundTokens
+      });
+
+    } catch (err) {
+      console.error("Stats error:", err);
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  const TEMPLATE_PRICE = 0.85;
+
+  app.get("/templates", async (req: Request, res: Response) => {
+    try {
+      const {
+        contactPhone,
+        startDate,
+        endDate,
+        groupBy = "day"
+      } = req.query;
+
+      if (!contactPhone) {
+        return res.status(400).json({
+          success: false,
+          message: "contactPhone is required"
+        });
+      }
+
+      const start = startDate
+        ? new Date(startDate as string)
+        : new Date("1970-01-01");
+
+      const end = endDate
+        ? new Date(endDate as string)
+        : new Date();
+
+      let dateFormat = "%Y-%m-%d";
+      if (groupBy === "week") dateFormat = "%Y-%U";
+      if (groupBy === "month") dateFormat = "%Y-%m";
+
+      const pipeline = [
+        {
+          $match: {
+            messageType: "template",
+            status: "sent",
+            contactPhone,
+            timestamp: { $gte: start, $lte: end }
+          }
+        },
+        {
+          $addFields: {
+            date: {
+              $dateToString: {
+                format: dateFormat,
+                date: { $toDate: "$timestamp" }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              date: "$date",
+              templateName: "$templateName"
+            },
+            sentCount: { $sum: 1 }
+          }
+        },
+        {
+          $group: {
+            _id: "$_id.date",
+            templates: {
+              $push: {
+                templateName: "$_id.templateName",
+                count: "$sentCount",
+                cost: { $multiply: ["$sentCount", TEMPLATE_PRICE] }
+              }
+            },
+            totalSent: { $sum: "$sentCount" }
+          }
+        },
+        {
+          $addFields: {
+            totalCost: {
+              $round: [{ $multiply: ["$totalSent", TEMPLATE_PRICE] }, 2]
+            }
+          }
+        },
+        {
+          $sort: { _id: 1 as const }
+        }
+      ];
+
+      const breakdown = await mongodb.BroadcastLog.aggregate(pipeline as any);
+
+      const summary = breakdown.reduce(
+        (acc, item) => {
+          acc.totalTemplatesSent += item.totalSent;
+          acc.totalCost += item.totalCost;
+          return acc;
+        },
+        { totalTemplatesSent: 0, totalCost: 0 }
+      );
+
+      res.json({
+        success: true,
+        filters: {
+          contactPhone,
+          startDate,
+          endDate,
+          groupBy
+        },
+        summary: {
+          ...summary,
+          totalCost: `₹${summary.totalCost.toFixed(2)}`
+        },
+        breakdown
+      });
+
+    } catch (error) {
+      console.error("Template report error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to generate template report"
+      });
+    }
+  });
+
+
+  app.get("/api/broadcast/template-report", async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+
+      const COST_PER_TEMPLATE = 0.85;
+
+      /* ---------- DATE FILTER ---------- */
+      let dateMatch: any = {};
+
+      if (startDate && endDate) {
+        dateMatch.timestamp = {
+          $gte: new Date(`${startDate}T00:00:00.000Z`),
+          $lte: new Date(`${endDate}T23:59:59.999Z`)
+        };
+      }
+
+      /* ---------- AGGREGATION ---------- */
+      const report = await mongodb.BroadcastLog.aggregate([
+        {
+          $match: {
+            messageType: "template",
+            status: "sent",
+            ...dateMatch
+          }
+        },
+        {
+          $addFields: {
+            sentDate: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: {
+                  $cond: [
+                    { $eq: [{ $type: "$timestamp" }, "string"] },
+                    { $toDate: "$timestamp" },
+                    "$timestamp"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              date: "$sentDate",
+              templateName: "$templateName"
+            },
+            sentCount: { $sum: 1 }
+          }
+        },
+        {
+          $group: {
+            _id: "$_id.date",
+            templates: {
+              $push: {
+                templateName: "$_id.templateName",
+                sentCount: "$sentCount",
+                cost: {
+                  $multiply: ["$sentCount", COST_PER_TEMPLATE]
+                }
+              }
+            },
+            totalSent: { $sum: "$sentCount" }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            date: "$_id",
+            templates: 1,
+            totalSent: 1,
+            totalCost: {
+              $multiply: ["$totalSent", COST_PER_TEMPLATE]
+            }
+          }
+        },
+        { $sort: { date: 1 } }
+      ]);
+
+      /* ---------- GRAND TOTAL ---------- */
+      const grandTotalSent = report.reduce((sum, d) => sum + d.totalSent, 0);
+      const grandTotalCost = grandTotalSent * COST_PER_TEMPLATE;
+
+      res.json({
+        currency: "INR",
+        costPerTemplate: COST_PER_TEMPLATE,
+        grandTotalSent,
+        grandTotalCost,
+        data: report
+      });
+
+    } catch (error) {
+      console.error("Template report error:", error);
+      res.status(500).json({ message: "Failed to fetch template report" });
+    }
+  });
+
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
       const stats = await storage.getDashboardStats();
@@ -61,31 +401,31 @@ export async function registerRoutes(
       const campaigns = await storage.getCampaigns();
       const templates = await storage.getTemplates();
       const broadcastLogs = await broadcastService.getBroadcastLogs({ limit: 10000 });
-      
+
       const now = new Date();
       const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      
+
       const periodMessages = messages.filter(m => new Date(m.timestamp) >= startDate);
       const outbound = periodMessages.filter(m => m.direction === 'outbound');
       const inbound = periodMessages.filter(m => m.direction === 'inbound');
-      
+
       const totalSent = outbound.length;
       const delivered = outbound.filter(m => m.status === 'delivered' || m.status === 'read').length;
       const read = outbound.filter(m => m.status === 'read').length;
       const replied = inbound.length;
       const failed = outbound.filter(m => m.status === 'failed').length;
-      
+
       const deliveryRate = totalSent > 0 ? Math.round((delivered / totalSent) * 100 * 10) / 10 : 0;
       const readRate = delivered > 0 ? Math.round((read / delivered) * 100 * 10) / 10 : 0;
       const replyRate = read > 0 ? Math.round((replied / read) * 100 * 10) / 10 : 0;
-      
+
       const deliveryData = [
         { name: 'Delivered', value: delivered, color: '#22c55e' },
         { name: 'Read', value: read, color: '#3b82f6' },
         { name: 'Replied', value: replied, color: '#8b5cf6' },
         { name: 'Failed', value: failed, color: '#ef4444' },
       ];
-      
+
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const dailyStats = [];
       for (let i = days - 1; i >= 0; i--) {
@@ -104,7 +444,7 @@ export async function registerRoutes(
           replied: dayInbound.length,
         });
       }
-      
+
       const campaignStats = campaigns.map(c => ({
         name: c.name,
         type: 'Marketing',
@@ -115,7 +455,7 @@ export async function registerRoutes(
         cost: (c.sentCount || 0) * 0.01,
         date: c.scheduledAt || c.createdAt,
       })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
-      
+
       const templateUsage: Record<string, { sent: number; delivered: number; read: number; replied: number }> = {};
       for (const log of broadcastLogs) {
         if (log.templateName) {
@@ -131,7 +471,7 @@ export async function registerRoutes(
           }
         }
       }
-      
+
       for (const msg of periodMessages) {
         if (msg.content && msg.content.startsWith('[Template:')) {
           const match = msg.content.match(/\[Template:\s*([^\]]+)\]/);
@@ -152,7 +492,7 @@ export async function registerRoutes(
           }
         }
       }
-      
+
       const templatePerformance = Object.entries(templateUsage).map(([name, stats]) => ({
         name,
         sent: stats.sent,
@@ -163,14 +503,14 @@ export async function registerRoutes(
         replyRate: stats.read > 0 ? Math.round((stats.replied / stats.read) * 100) : 0,
         cost: stats.sent * 0.01,
       })).sort((a, b) => b.sent - a.sent).slice(0, 10);
-      
+
       const totalCost = totalSent * 0.01;
       const costTrend = dailyStats.map(d => ({
         date: d.date,
         cost: d.sent * 0.01,
         messages: d.sent,
       }));
-      
+
       res.json({
         totalSent,
         totalDelivered: delivered,
@@ -198,23 +538,23 @@ export async function registerRoutes(
       const days = parseInt(req.query.days as string) || 7;
       const messages = await storage.getMessages();
       const broadcastLogs = await broadcastService.getBroadcastLogs({ limit: 10000 });
-      
+
       const now = new Date();
       const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      
+
       const periodMessages = messages.filter(m => new Date(m.timestamp) >= startDate);
       const outbound = periodMessages.filter(m => m.direction === 'outbound');
-      
+
       const totalSent = outbound.length;
       const delivered = outbound.filter(m => m.status === 'delivered' || m.status === 'read').length;
       const read = outbound.filter(m => m.status === 'read').length;
       const failed = outbound.filter(m => m.status === 'failed').length;
       const pending = outbound.filter(m => m.status === 'sent').length;
-      
+
       const deliveryRate = totalSent > 0 ? Math.round((delivered / totalSent) * 100 * 10) / 10 : 0;
       const readRate = delivered > 0 ? Math.round((read / delivered) * 100 * 10) / 10 : 0;
       const failureRate = totalSent > 0 ? Math.round((failed / totalSent) * 100 * 10) / 10 : 0;
-      
+
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const dailyData = [];
       for (let i = days - 1; i >= 0; i--) {
@@ -233,7 +573,7 @@ export async function registerRoutes(
           failed: dayOutbound.filter(m => m.status === 'failed').length,
         });
       }
-      
+
       const hourlyData = [];
       for (let hour = 0; hour < 24; hour++) {
         const hourMsgs = outbound.filter(m => {
@@ -246,7 +586,7 @@ export async function registerRoutes(
           delivered: hourMsgs.filter(m => m.status === 'delivered' || m.status === 'read').length,
         });
       }
-      
+
       res.json({
         totalSent,
         delivered,
@@ -279,11 +619,11 @@ export async function registerRoutes(
         email?: string;
         tags?: string[];
       }>('imported_contacts');
-      
+
       // Combine and deduplicate by phone number
       const phoneSet = new Set<string>();
       const allContacts: typeof memContacts = [];
-      
+
       // Add imported contacts first (they have user-provided names)
       for (const contact of importedContacts) {
         const normalizedPhone = contact.phone.replace(/\D/g, '');
@@ -300,7 +640,7 @@ export async function registerRoutes(
           });
         }
       }
-      
+
       // Add memory contacts that don't overlap
       for (const contact of memContacts) {
         const normalizedPhone = contact.phone.replace(/\D/g, '');
@@ -309,7 +649,7 @@ export async function registerRoutes(
           allContacts.push(contact);
         }
       }
-      
+
       res.json(allContacts);
     } catch (error) {
       console.error("Error fetching contacts:", error);
@@ -414,10 +754,10 @@ export async function registerRoutes(
       const { SystemUser } = await import('./modules/users/user.model');
       const { User } = await import('./modules/storage/mongodb.adapter');
       const email = req.params.email;
-      
+
       const systemUser = await SystemUser.findOne({ email });
       const regularUser = await User.findOne({ $or: [{ email }, { username: email }] });
-      
+
       res.json({
         systemUser: systemUser ? {
           id: systemUser.id,
@@ -444,36 +784,36 @@ export async function registerRoutes(
       const userId = req.headers['x-user-id'] as string;
       const userRole = (req.headers['x-user-role'] as string) || 'super_admin';
       const userName = req.headers['x-user-name'] as string;
-      
+
       console.log(`[Inbox Filter] User: ${userName}, Role: ${userRole}, ID: ${userId}`);
       console.log(`[Inbox Filter] All headers:`, JSON.stringify(req.headers));
-      
+
       let chats = await storage.getChats();
-      
+
       if (userId && userRole !== 'super_admin' && userRole !== 'sub_admin') {
         const permittedContactIds = await leadManagementService.getFilteredChatsForUser({
           userId,
           role: userRole as any,
           name: userName,
         });
-        
+
         if (permittedContactIds.length > 0) {
           chats = chats.filter(chat => permittedContactIds.includes(chat.contact.id));
         } else if (userRole === 'user') {
           chats = [];
         }
       }
-      
-      const assignments = await leadManagementService.getAllLeadAssignments({ 
+
+      const assignments = await leadManagementService.getAllLeadAssignments({
         status: ['assigned', 'in_progress']
       });
       const assignmentMap = new Map(assignments.map((a: any) => [a.contactId, a]));
-      
+
       const chatsWithAssignment = chats.map(chat => ({
         ...chat,
         assignment: assignmentMap.get(chat.contact.id) || null,
       }));
-      
+
       res.json(chatsWithAssignment);
     } catch (error) {
       console.error('Error getting chats:', error);
@@ -486,23 +826,23 @@ export async function registerRoutes(
       const userId = req.headers['x-user-id'] as string;
       const userRole = (req.headers['x-user-role'] as string) || 'super_admin';
       const userName = req.headers['x-user-name'] as string;
-      
+
       let chats = await storage.getChats();
-      
+
       if (userId && userRole !== 'super_admin' && userRole !== 'sub_admin') {
         const permittedContactIds = await leadManagementService.getFilteredChatsForUser({
           userId,
           role: userRole as any,
           name: userName,
         });
-        
+
         if (permittedContactIds.length > 0) {
           chats = chats.filter(chat => permittedContactIds.includes(chat.contact.id));
         } else if (userRole === 'user') {
           chats = [];
         }
       }
-      
+
       const now = new Date();
       const windowChats = chats.filter(chat => {
         if (chat.lastInboundMessageTime) {
@@ -551,20 +891,20 @@ export async function registerRoutes(
   app.post("/api/inbox/send", async (req, res) => {
     try {
       const { contactId, phone, name, messageType, templateName, customMessage, agentId } = req.body;
-      
+
       if (!phone) {
         return res.status(400).json({ error: "Phone number is required" });
       }
-      
+
       if (!messageType) {
         return res.status(400).json({ error: "Message type is required" });
       }
-      
+
       console.log(`[InboxSend] Sending ${messageType} message to ${phone}`);
-      
+
       let result: { success: boolean; messageId?: string; error?: string; aiMessage?: string } = { success: false };
       let messageContent = "";
-      
+
       switch (messageType) {
         case "template": {
           if (!templateName) {
@@ -574,7 +914,7 @@ export async function registerRoutes(
           messageContent = `[Template: ${templateName}]`;
           break;
         }
-        
+
         case "custom": {
           if (!customMessage) {
             return res.status(400).json({ error: "Message content is required for custom messages" });
@@ -583,27 +923,27 @@ export async function registerRoutes(
           messageContent = customMessage;
           break;
         }
-        
+
         case "ai": {
           if (!agentId) {
             return res.status(400).json({ error: "Agent ID is required for AI messages" });
           }
-          
+
           const agent = await agentService.getAgentById(agentId);
           if (!agent) {
             return res.status(404).json({ error: "AI Agent not found" });
           }
-          
+
           console.log(`[InboxSend] Generating AI response with agent: ${agent.name}`);
-          
+
           // Assign this agent to the contact for future messages and enable auto-reply
           await contactAgentService.assignAgentToContact(contactId, phone, agentId, agent.name);
           await contactAgentService.enableAutoReply(phone);
           console.log(`[InboxSend] Assigned agent ${agent.name} to contact ${phone} (auto-reply enabled)`);
-          
+
           // Get conversation history from MongoDB (stored per contact-agent assignment)
           let conversationHistory = await contactAgentService.getConversationHistory(phone);
-          
+
           // If no stored history, fetch from messages
           if (conversationHistory.length === 0 && contactId) {
             try {
@@ -617,33 +957,33 @@ export async function registerRoutes(
               console.log("[InboxSend] Could not fetch conversation context");
             }
           }
-          
+
           console.log(`[InboxSend] Using ${conversationHistory.length} messages for context, agent model: ${agent.model || 'default'}`);
-          
+
           // Get the last inbound message to respond to, or use a greeting prompt
           const lastInboundMessage = conversationHistory.filter(m => m.role === 'user').pop();
-          const promptMessage = lastInboundMessage?.content || 
+          const promptMessage = lastInboundMessage?.content ||
             `Greet ${name || 'the customer'} warmly and introduce yourself as per your instructions.`;
-          
+
           const aiMessage = await aiService.generateAgentResponse(
             promptMessage,
             agent,
             conversationHistory.slice(0, -1) // Exclude the last message since we're using it as the prompt
           );
-          
+
           if (!aiMessage) {
             return res.status(500).json({ error: "Failed to generate AI response. Check if API key is configured for the agent model." });
           }
-          
+
           console.log(`[InboxSend] AI generated: "${aiMessage.substring(0, 100)}..."`);
-          
+
           // Store the AI response in conversation history
           await contactAgentService.addMessageToHistory(phone, 'assistant', aiMessage);
-          
+
           result = await broadcastService.sendCustomMessage(phone, aiMessage);
           result.aiMessage = aiMessage;
           messageContent = aiMessage;
-          
+
           if (!result.success && result.error?.includes("24")) {
             console.log("[InboxSend] Outside 24-hour window, trying template fallback");
             result = await templateService.sendHelloWorldTemplate(phone);
@@ -651,11 +991,11 @@ export async function registerRoutes(
           }
           break;
         }
-        
+
         default:
           return res.status(400).json({ error: "Invalid message type. Use: template, custom, or ai" });
       }
-      
+
       if (result.success && contactId) {
         try {
           await storage.createMessage({
@@ -670,18 +1010,18 @@ export async function registerRoutes(
           console.error("[InboxSend] Failed to save message to conversation:", saveError);
         }
       }
-      
+
       if (result.success) {
-        res.json({ 
-          success: true, 
+        res.json({
+          success: true,
           messageId: result.messageId,
           message: messageContent,
-          sent: true 
+          sent: true
         });
       } else {
-        res.status(400).json({ 
-          success: false, 
-          error: result.error || "Failed to send message" 
+        res.status(400).json({
+          success: false,
+          error: result.error || "Failed to send message"
         });
       }
     } catch (error: any) {
@@ -693,29 +1033,29 @@ export async function registerRoutes(
   app.post("/api/inbox/send-ai-response", async (req, res) => {
     try {
       const { contactId, phone, name, agentId, userMessage } = req.body;
-      
+
       if (!phone || !agentId) {
         return res.status(400).json({ error: "Phone and agentId are required" });
       }
-      
+
       const agent = await agentService.getAgentById(agentId);
       if (!agent) {
         return res.status(404).json({ error: "AI Agent not found" });
       }
-      
+
       console.log(`[InboxSendAI] Generating contextual AI response with agent: ${agent.name} (model: ${agent.model || 'default'})`);
-      
+
       // Use the user message directly as the prompt, or a simple greeting request
       const promptMessage = userMessage || 'Hello';
-      
+
       const aiMessage = await aiService.generateAgentResponse(promptMessage, agent, []);
-      
+
       if (!aiMessage) {
         return res.status(500).json({ error: "Failed to generate AI response. Check if API key is configured for the agent model." });
       }
-      
+
       const result = await broadcastService.sendCustomMessage(phone, aiMessage);
-      
+
       if (result.success && contactId) {
         await storage.createMessage({
           contactId,
@@ -725,11 +1065,11 @@ export async function registerRoutes(
           status: "sent" as const,
         });
       }
-      
-      res.json({ 
-        success: result.success, 
+
+      res.json({
+        success: result.success,
         message: aiMessage,
-        error: result.error 
+        error: result.error
       });
     } catch (error: any) {
       console.error("[InboxSendAI] Error:", error);
@@ -881,11 +1221,11 @@ export async function registerRoutes(
   app.get("/api/templates/meta", async (req, res) => {
     try {
       const { credentialsService } = await import('./modules/credentials/credentials.service');
-      
+
       const userId = (req as any).session?.user?.id;
       let token: string | undefined;
       let wabaId: string | undefined;
-      
+
       if (userId) {
         const credentials = await credentialsService.getDecryptedCredentials(userId);
         if (credentials?.whatsappToken) {
@@ -895,16 +1235,16 @@ export async function registerRoutes(
           wabaId = credentials.businessAccountId;
         }
       }
-      
+
       if (!token) {
         token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
       }
       if (!wabaId) {
         wabaId = process.env.WABA_ID;
       }
-      
+
       if (!token || !wabaId) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: "WhatsApp credentials not configured",
           hint: "Please configure your WhatsApp Access Token and Business Account ID in Settings."
         });
@@ -915,11 +1255,11 @@ export async function registerRoutes(
       const response = await fetch(
         `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=id,name,status,category,language,quality_score,components,rejected_reason&limit=100&access_token=${token}`
       );
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         console.error("[TemplatesMeta] Meta API Error:", errorData);
-        return res.status(response.status).json({ 
+        return res.status(response.status).json({
           message: "Failed to fetch templates from Meta",
           error: errorData.error?.message || "Unknown error"
         });
@@ -933,7 +1273,7 @@ export async function registerRoutes(
         let header = "";
         let footer = "";
         let buttons: any[] = [];
-        
+
         if (t.components) {
           for (const comp of t.components) {
             if (comp.type === "HEADER") {
@@ -981,12 +1321,12 @@ export async function registerRoutes(
   app.post("/api/templates/sync-meta", async (req, res) => {
     try {
       const { credentialsService } = await import('./modules/credentials/credentials.service');
-      
+
       // Get user credentials from session
       const userId = (req as any).session?.user?.id;
       let token: string | undefined;
       let wabaId: string | undefined;
-      
+
       if (userId) {
         const credentials = await credentialsService.getDecryptedCredentials(userId);
         if (credentials?.whatsappToken) {
@@ -996,7 +1336,7 @@ export async function registerRoutes(
           wabaId = credentials.businessAccountId;
         }
       }
-      
+
       // Fallback to environment variables
       if (!token) {
         token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
@@ -1004,7 +1344,7 @@ export async function registerRoutes(
       if (!wabaId) {
         wabaId = process.env.WABA_ID;
       }
-      
+
       if (!token) {
         return res.status(400).json({ message: "WhatsApp access token not configured. Please configure your API credentials in Settings." });
       }
@@ -1019,11 +1359,11 @@ export async function registerRoutes(
       const response = await fetch(
         `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
       );
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         console.error("[TemplateSync] Meta API Error:", errorData);
-        return res.status(response.status).json({ 
+        return res.status(response.status).json({
           message: "Failed to fetch templates from Meta",
           error: errorData.error?.message || "Unknown error",
           hint: "Make sure WABA_ID is set to your WhatsApp Business Account ID (not Phone Number ID)"
@@ -1041,7 +1381,7 @@ export async function registerRoutes(
       for (const metaTemplate of metaTemplates) {
         // Log template info
         console.log(`[TemplateSync] Template: ${metaTemplate.name}, Status: ${metaTemplate.status}, Language: ${metaTemplate.language}`);
-        
+
         if (metaTemplate.status === "APPROVED") {
           approvedTemplates.push(`${metaTemplate.name} (${metaTemplate.language})`);
         }
@@ -1049,11 +1389,11 @@ export async function registerRoutes(
         // Check if template already exists
         const existingTemplates = await storage.getTemplates();
         const exists = existingTemplates.find(t => t.name === metaTemplate.name);
-        
+
         // Extract content from components
         let content = "";
         let variables: string[] = [];
-        
+
         if (metaTemplate.components) {
           const bodyComponent = metaTemplate.components.find((c: any) => c.type === "BODY");
           if (bodyComponent) {
@@ -1065,8 +1405,8 @@ export async function registerRoutes(
           }
         }
 
-        const status = metaTemplate.status === "APPROVED" ? "approved" : 
-                      metaTemplate.status === "REJECTED" ? "rejected" : "pending";
+        const status = metaTemplate.status === "APPROVED" ? "approved" :
+          metaTemplate.status === "REJECTED" ? "rejected" : "pending";
         const now = new Date().toISOString();
 
         if (!exists) {
@@ -1076,7 +1416,7 @@ export async function registerRoutes(
             content: content,
             variables: variables,
           });
-          await storage.updateTemplate(newTemplate.id, { 
+          await storage.updateTemplate(newTemplate.id, {
             status,
             language: metaTemplate.language || 'en',
             metaTemplateId: metaTemplate.id,
@@ -1085,7 +1425,7 @@ export async function registerRoutes(
           } as any);
           synced++;
         } else {
-          await storage.updateTemplate(exists.id, { 
+          await storage.updateTemplate(exists.id, {
             status,
             content: content || exists.content,
             language: metaTemplate.language || 'en',
@@ -1099,9 +1439,9 @@ export async function registerRoutes(
 
       console.log(`[TemplateSync] Approved templates: ${approvedTemplates.join(', ')}`);
 
-      res.json({ 
-        success: true, 
-        synced, 
+      res.json({
+        success: true,
+        synced,
         updated,
         total: metaTemplates.length,
         approvedTemplates,
@@ -1132,11 +1472,11 @@ export async function registerRoutes(
       }
 
       const { credentialsService } = await import('./modules/credentials/credentials.service');
-      
+
       const userId = (req as any).session?.user?.id;
       let token: string | undefined;
       let wabaId: string | undefined;
-      
+
       if (userId) {
         const credentials = await credentialsService.getDecryptedCredentials(userId);
         if (credentials?.whatsappToken) {
@@ -1146,14 +1486,14 @@ export async function registerRoutes(
           wabaId = credentials.businessAccountId;
         }
       }
-      
+
       if (!token) {
         token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
       }
       if (!wabaId) {
         wabaId = process.env.WABA_ID;
       }
-      
+
       if (!token) {
         return res.status(400).json({ message: "WhatsApp access token not configured. Please configure your API credentials in Settings." });
       }
@@ -1164,7 +1504,7 @@ export async function registerRoutes(
 
       // Convert template name to Meta format
       const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-      
+
       console.log(`[TemplateSubmit] Submitting template "${metaTemplateName}" to Meta WABA: ${wabaId}`);
 
       // Prepare template for Meta submission
@@ -1218,7 +1558,7 @@ export async function registerRoutes(
 
       if (!response.ok) {
         console.error("[TemplateSubmit] Meta error:", data);
-        
+
         // Handle specific error codes
         let errorMessage = data.error?.message || "Unknown error";
         if (data.error?.code === 100) {
@@ -1228,8 +1568,8 @@ export async function registerRoutes(
         } else if (data.error?.error_subcode === 2388093) {
           errorMessage = "Template contains prohibited content. Please check Meta's template guidelines.";
         }
-        
-        return res.status(response.status).json({ 
+
+        return res.status(response.status).json({
           message: "Failed to submit template to Meta",
           error: errorMessage,
           details: data.error
@@ -1241,8 +1581,8 @@ export async function registerRoutes(
       // Update template status to pending (Meta will review it)
       await storage.updateTemplate(req.params.id, { status: "pending" });
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: `Template "${metaTemplateName}" submitted to Meta for approval. It will appear in your Meta Business Suite templates list. Approval typically takes 1-24 hours.`,
         metaTemplateId: data.id,
         metaTemplateName: metaTemplateName,
@@ -1432,7 +1772,7 @@ export async function registerRoutes(
     try {
       const messages = await storage.getMessages();
       const campaigns = await storage.getCampaigns();
-      
+
       const report = {
         totalSent: messages.filter(m => m.direction === "outbound").length,
         delivered: messages.filter(m => m.direction === "outbound" && (m.status === "delivered" || m.status === "read")).length,
@@ -1474,7 +1814,7 @@ export async function registerRoutes(
     try {
       const messages = await storage.getMessages();
       const teamMembers = await storage.getTeamMembers();
-      
+
       const performance = teamMembers.map(member => {
         const agentMessages = messages.filter(m => m.agentId === member.userId && m.direction === "outbound");
         return {
@@ -1505,9 +1845,9 @@ export async function registerRoutes(
     try {
       const result = await contactAgentService.enableAutoReplyForAll();
       console.log(`[ContactAgents] Bulk enabled auto-reply: ${result.updated}/${result.total} contacts`);
-      res.json({ 
+      res.json({
         message: `Re-enabled auto-reply for ${result.updated} contacts`,
-        ...result 
+        ...result
       });
     } catch (error) {
       console.error('[ContactAgents] Error enabling all auto-reply:', error);
@@ -1535,7 +1875,7 @@ export async function registerRoutes(
   app.get("/api/chats/whatsapp-leads", async (req, res) => {
     try {
       const allChats = await storage.getChats();
-      
+
       const memContacts = await storage.getContacts();
       const importedContacts = await mongodb.readCollection<{
         id: string;
@@ -1544,7 +1884,7 @@ export async function registerRoutes(
         email?: string;
         tags?: string[];
       }>('imported_contacts');
-      
+
       const knownPhones = new Set<string>();
       for (const contact of memContacts) {
         const normalized = contact.phone.replace(/\D/g, '');
@@ -1560,13 +1900,13 @@ export async function registerRoutes(
           knownPhones.add(normalized.slice(-10));
         }
       }
-      
+
       const leadChats = allChats.filter(chat => {
         const chatPhone = chat.contact.phone.replace(/\D/g, '');
         const chatPhoneLast10 = chatPhone.slice(-10);
         return !knownPhones.has(chatPhone) && !knownPhones.has(chatPhoneLast10);
       });
-      
+
       res.json(leadChats);
     } catch (error) {
       console.error("Error fetching WhatsApp leads:", error);

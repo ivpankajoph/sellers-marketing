@@ -118,7 +118,7 @@ export default function DashboardLayout({
         { label: "Broadcasts", href: "/campaigns/broadcast" },
         // { label: "Selected Contacts", href: "/campaigns/selected-contacts" },
         { label: "Schedule Messages", href: "/campaigns/schedule" },
-        { label: "Single Message", href: "/campaigns/single" },
+        // { label: "Single Message", href: "/campaigns/single" },
         // { label: "Reports", href: "/campaigns/report" },
       ],
     },
@@ -128,9 +128,9 @@ export default function DashboardLayout({
       href: "/automation/dashboard",
       pageId: "auto-reply",
       subItems: [
-        { label: "Dashboard", href: "/automation/dashboard" },
+        // { label: "Dashboard", href: "/automation/dashboard" },
         { label: "Triggers", href: "/automation/triggers" },
-        { label: "Flows", href: "/automation/flows" },
+        { label: "Flows", href: "/whatsapp/flows" },
         { label: "Drip Campaigns", href: "/automation/campaigns" },
         // { label: "Segments", href: "/automation/segments" },
         { label: "Analytics", href: "/automation/analytics" },
@@ -165,8 +165,11 @@ export default function DashboardLayout({
 
       subItems: [
         { label: "Billing & Credits", href: "/settings/billing" },
-        { label: "Credits", href: "/reports/credits" },
+        // { label: "Credits", href: "/reports/credits" },
         { label: "Spending", href: "/reports/spending" },
+
+        // { label: "AI Usage Dashboard", href: "/usagedashboard" },
+        { label: "Contact Usage Dashboard", href: "/contactusagedashboard" },
         { label: "AI Tokens", href: "/aitokens" },
         { label: "Whatsapp Tokens", href: "/whatsapptokens" },
       ],
@@ -194,12 +197,12 @@ export default function DashboardLayout({
         { label: "Leads", href: "/facebook/leads" },
       ],
     },
-    {
-      icon: Workflow,
-      label: "WhatsApp Flows",
-      href: "/whatsapp/flows",
-      pageId: "whatsapp-flows",
-    },
+    // {
+    //   icon: Workflow,
+    //   label: "WhatsApp Flows",
+    //   href: "/whatsapp/flows",
+    //   pageId: "whatsapp-flows",
+    // },
     {
       icon: BarChart3,
       label: "Reports",
@@ -209,7 +212,7 @@ export default function DashboardLayout({
         { label: "Delivery Report", href: "/reports/delivery" },
         { label: "Broadcast Report", href: "/reports/broadcast" },
         { label: "Campaign Perf.", href: "/campaigns/report" },
-        { label: "Replies", href: "/reports/replies" },
+        // { label: "Replies", href: "/reports/replies" },
         { label: "Agent Perf.", href: "/reports/agents" },
         { label: "Contact Analytics", href: "/reports/contacts" },
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
@@ -295,10 +298,9 @@ export default function DashboardLayout({
               <div
                 className={`
                   flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer select-none
-                  ${
-                    isActive
-                      ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
-                      : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                  ${isActive
+                    ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
+                    : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                   }
                 `}
               >
@@ -319,10 +321,9 @@ export default function DashboardLayout({
                   <div
                     className={`
                       block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
-                      ${
-                        location === sub.href
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                      ${location === sub.href
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                       }
                     `}
                   >
@@ -341,10 +342,9 @@ export default function DashboardLayout({
         <div
           className={`
             flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
-            ${
-              isActive
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            ${isActive
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
             }
           `}
         >
