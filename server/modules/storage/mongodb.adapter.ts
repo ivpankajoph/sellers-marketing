@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import dotenv from 'dotenv';
+import e from 'express';
 dotenv.config();
 let isConnected = false;
 
@@ -278,9 +279,10 @@ const AutomationSchema = new Schema({
 
 const UserSchema = new Schema({
   id: { type: String, required: true, unique: true },
-  username: { type: String, required: true, unique: true },
+  username: { type: String,  unique: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
+
   email: { type: String },
   role: { type: String, default: 'user' },
   createdAt: { type: String, required: true },
@@ -491,6 +493,15 @@ const UserActivityStatsSchema = new Schema({
 
 UserActivityStatsSchema.index({ userId: 1, date: -1 });
 
+
+const otpSchema = new mongoose.Schema({
+  phone: { type: String, required: true },
+  otp: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+  verified: { type: Boolean, default: false }
+});
+
+export const OTP = mongoose.models.OTP || mongoose.model('OTP', otpSchema);
 export const Agent = mongoose.models.Agent || mongoose.model('Agent', AgentSchema);
 export const Form = mongoose.models.Form || mongoose.model('Form', FormSchema);
 export const Lead = mongoose.models.Lead || mongoose.model('Lead', LeadSchema);
