@@ -39,7 +39,7 @@ export async function findUserById(id: string): Promise<any | null> {
   try {
     const user = await User.findOne({ id });
     if (user) return user;
-    
+
     const systemUser = await SystemUser.findOne({ id, isActive: true });
     if (systemUser) {
       return {
@@ -51,7 +51,7 @@ export async function findUserById(id: string): Promise<any | null> {
         pageAccess: systemUser.pageAccess,
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('[Auth] Error finding user by id:', error);
@@ -59,25 +59,89 @@ export async function findUserById(id: string): Promise<any | null> {
   }
 }
 
-export async function createUser(username: string, password: string, name: string, email?: string , phone?: string): Promise<AuthUser | null> {
+
+async function generateUniqueUsername(
+  name?: string,
+  email?: string
+): Promise<string> {
+  const base =
+    name?.toLowerCase().replace(/[^a-z0-9]/g, '') ||
+    email?.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') ||
+    'user';
+
+  let username = base;
+  let counter = 1;
+
+  while (await User.exists({ username })) {
+    username = `${base}${counter}`;
+    counter++;
+  }
+
+  return username;
+}
+
+
+export async function createUser(
+  username?: string,
+  password?: string,
+  name?: string,
+  email?: string,
+  phone?: string
+): Promise<AuthUser | null> {
+  const debugPrefix = '[Auth:createUser]';
+
   try {
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    if (!email) {
+      console.warn(`${debugPrefix} Email is required for username`);
       return null;
     }
 
+    if (!password) {
+      console.warn(`${debugPrefix} Password is required`);
+      return null;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    console.debug(`${debugPrefix} Request received`, {
+      email: normalizedEmail,
+      phone,
+    });
+
+    console.debug(`${debugPrefix} Checking if user already exists`);
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      console.warn(`${debugPrefix} User already exists`, {
+        email: normalizedEmail,
+        userId: existingUser.id,
+      });
+      return null;
+    }
+
+    console.debug(`${debugPrefix} Generating user ID`);
     const id = crypto.randomUUID();
+
+    console.debug(`${debugPrefix} Hashing password`);
     const hashedPassword = hashPassword(password);
-    
+
+    console.debug(`${debugPrefix} Creating user in DB`);
     const user = await User.create({
       id,
-      username,
-      password: hashedPassword,
+      username: normalizedEmail, 
+      password: hashedPassword,  // ❌ never log
       name,
-      email: email || '',
+      email: normalizedEmail,
       role: 'user',
       phone: phone || '',
       createdAt: new Date().toISOString(),
+    });
+
+    console.info(`${debugPrefix} User created successfully`, {
+      id: user.id,
+      username: user.username,
     });
 
     return {
@@ -87,14 +151,21 @@ export async function createUser(username: string, password: string, name: strin
       email: user.email,
       role: user.role,
     };
-  } catch (error) {
-    console.error('[Auth] Error creating user:', error);
+  } catch (error: any) {
+    console.error(`${debugPrefix} Failed to create user`, {
+      message: error?.message,
+      stack: error?.stack,
+    });
+
     return null;
   }
 }
 
+
+
+
 export async function updateUserProfile(
-  userId: string, 
+  userId: string,
   updates: { name?: string; email?: string; phone?: string }
 ): Promise<AuthUser | null> {
   try {
@@ -150,9 +221,9 @@ export async function validateLogin(username: string, password: string): Promise
       };
     }
 
-    const systemUser = await SystemUser.findOne({ 
+    const systemUser = await SystemUser.findOne({
       $or: [{ username }, { email: username }],
-      isActive: true 
+      isActive: true
     });
     if (systemUser) {
       if (!verifyPassword(password, systemUser.password)) {
@@ -183,7 +254,7 @@ export async function ensureDefaultAdmin(): Promise<void> {
       await createUser('admin@whatsapp.com', 'admin123', 'Admin', 'admin@whatsapp.com');
       console.log('[Auth] Default admin user created (admin@whatsapp.com / admin123)');
     }
-    
+
     const admin = await User.findOne({ username: 'admin@whatsapp.com' });
     if (admin) {
       if (admin.role !== 'super_admin') {

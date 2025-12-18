@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { SelectGroup, SelectLabel } from "@radix-ui/react-select";
 
 interface Agent {
   id: string;
@@ -39,6 +40,36 @@ interface Agent {
   createdAt: string;
   updatedAt: string;
 }
+
+// Mapping from UI brand name to actual model strings
+const MODEL_BRAND_MAP: { [key: string]: string } = {
+  "gpt-4o": "boomer",
+  "gpt-4o-mini": "boomer",
+  "gpt-4-turbo": "boomer",
+  "gpt-3.5-turbo": "boomer",
+  "gemini-2.5-flash": "kaaya",
+  "gemini-2.5-pro": "kaaya",
+  "gemini-1.5-flash": "kaaya",
+  "gemini-1.5-pro": "kaaya",
+  // Creeper uses same models as Kaaya (Gemini), just rebranded
+  "creeper-2.5-flash": "gemini-2.5-flash",
+  "creeper-2.5-pro": "gemini-2.5-pro",
+  "creeper-1.5-flash": "gemini-1.5-flash",
+  "creeper-1.5-pro": "gemini-1.5-pro",
+};
+
+// Reverse map for internal model → brand display
+const INTERNAL_TO_BRAND: { [key: string]: string } = {
+  "gpt-4o": "Boomer",
+  "gpt-4o-mini": "Boomer",
+  "gpt-4-turbo": "Boomer",
+  "gpt-3.5-turbo": "Boomer",
+  "gemini-2.5-flash": "Kaaya",
+  "gemini-2.5-pro": "Kaaya",
+  "gemini-1.5-flash": "Kaaya",
+  "gemini-1.5-pro": "Kaaya",
+  // Creeper is not an internal model, so we handle display separately
+};
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -69,51 +100,87 @@ export default function AgentsPage() {
       "gpt-3.5-turbo": "GPT-3.5",
       "gemini-2.5-flash": "Gemini 2.5 Flash",
       "gemini-2.5-pro": "Gemini 2.5 Pro",
-      "gemini-2.0-flash": "Gemini 2.0 Flash",
       "gemini-1.5-flash": "Gemini 1.5 Flash",
       "gemini-1.5-pro": "Gemini 1.5 Pro",
+      "creeper-2.5-flash": "Creeper 2.5 Flash",
+      "creeper-2.5-pro": "Creeper 2.5 Pro",
+      "creeper-1.5-flash": "Creeper 1.5 Flash",
+      "creeper-1.5-pro": "Creeper 1.5 Pro",
     };
     return modelNames[model] || model;
   };
 
+  const getBrandFromModel = (model: string): string => {
+    // Handle Creeper models: they start with "creeper-"
+    if (model.startsWith("creeper-")) {
+      return "Creeper";
+    }
+    const internalModel = MODEL_BRAND_MAP[model] ? model : Object.keys(MODEL_BRAND_MAP).find(key => MODEL_BRAND_MAP[key] === model);
+    if (internalModel && internalModel.startsWith("gemini-")) return "Kaaya";
+    if (internalModel && internalModel.startsWith("gpt-")) return "Boomer";
+    // Fallback
+    if (model.startsWith("gemini-")) return "Kaaya";
+    if (model.startsWith("gpt-")) return "Boomer";
+    return "Unknown";
+  };
+
   const getProviderFromModel = (model: string): 'openai' | 'gemini' => {
-    return model.startsWith('gemini-') ? 'gemini' : 'openai';
+    // Creeper models are Gemini under the hood
+    if (model.startsWith("creeper-")) {
+      return "gemini";
+    }
+    return model.startsWith("gemini-") ? "gemini" : "openai";
   };
 
   const getDefaultModelForProvider = (provider: 'openai' | 'gemini'): string => {
-    return provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o';
+    return provider === "gemini" ? "gemini-2.5-flash" : "gpt-4o";
   };
 
-  const switchAgentProvider = async (agent: Agent, newProvider: 'openai' | 'gemini') => {
-    const newModel = getDefaultModelForProvider(newProvider);
+  const getDefaultModelForBrand = (brand: string): string => {
+    switch (brand) {
+      case "Boomer":
+        return "gpt-4o";
+      case "Kaaya":
+        return "gemini-2.5-flash";
+      case "Creeper":
+        return "creeper-2.5-flash"; // UI default
+      default:
+        return "gpt-4o";
+    }
+  };
+
+  const switchAgentToBrand = async (agent: Agent, brand: string) => {
+    const model = getDefaultModelForBrand(brand);
     try {
       const response = await fetch(`/api/agents/${agent.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: newModel }),
+        body: JSON.stringify({ model }),
       });
 
       if (response.ok) {
         const updated = await response.json();
         setAgents((prev) => prev.map((a) => (a.id === agent.id ? updated : a)));
         toast({ 
-          title: "Provider Switched", 
-          description: `${agent.name} now uses ${newProvider === 'openai' ? 'OpenAI' : 'Gemini'}.` 
+          title: "Agent Updated", 
+          description: `${agent.name} now uses ${brand}.` 
         });
+      } else {
+        toast({ title: "Error", description: "Failed to switch brand.", variant: "destructive" });
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to switch provider.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to switch brand.", variant: "destructive" });
     }
   };
 
-  const switchAllAgentsToProvider = async (provider: 'openai' | 'gemini') => {
-    const newModel = getDefaultModelForProvider(provider);
+  const switchAllAgentsToBrand = async (brand: string) => {
+    const model = getDefaultModelForBrand(brand);
     try {
       const updatePromises = agents.map(agent => 
         fetch(`/api/agents/${agent.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: newModel }),
+          body: JSON.stringify({ model }),
         })
       );
       
@@ -122,7 +189,7 @@ export default function AgentsPage() {
       
       toast({ 
         title: "All Agents Updated", 
-        description: `All agents now use ${provider === 'openai' ? 'OpenAI' : 'Gemini'}.` 
+        description: `All agents now use ${brand}.` 
       });
     } catch (error) {
       toast({ title: "Error", description: "Failed to update agents.", variant: "destructive" });
@@ -183,6 +250,12 @@ export default function AgentsPage() {
       return;
     }
 
+    // Map Creeper model back to actual Gemini model before sending to backend
+    let actualModel = formData.model;
+    if (formData.model.startsWith("creeper-")) {
+      actualModel = formData.model.replace("creeper-", "gemini-");
+    }
+
     try {
       const url = editingAgent ? `/api/agents/${editingAgent.id}` : "/api/agents";
       const method = editingAgent ? "PUT" : "POST";
@@ -190,16 +263,23 @@ export default function AgentsPage() {
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, model: actualModel }),
       });
 
       if (response.ok) {
         const agent = await response.json();
+        // Restore display model (with creeper prefix if needed) for UI consistency
+        const displayModel = agent.model.startsWith("gemini-") && formData.model.startsWith("creeper-")
+          ? agent.model.replace("gemini-", "creeper-")
+          : agent.model;
+
+        const agentForUI = { ...agent, model: displayModel };
+
         if (editingAgent) {
-          setAgents((prev) => prev.map((a) => (a.id === agent.id ? agent : a)));
+          setAgents((prev) => prev.map((a) => (a.id === agent.id ? agentForUI : a)));
           toast({ title: "Agent Updated", description: `${agent.name} has been updated.` });
         } else {
-          setAgents((prev) => [...prev, agent]);
+          setAgents((prev) => [...prev, agentForUI]);
           toast({ title: "Agent Created", description: `${agent.name} has been created.` });
         }
         setDialogOpen(false);
@@ -245,13 +325,18 @@ export default function AgentsPage() {
   const testAgent = async () => {
     if (!testingAgent || !testMessage) return;
 
+    // Use actual model (not creeper-prefixed) for backend
+    const actualModel = testingAgent.model.startsWith("creeper-")
+      ? testingAgent.model.replace("creeper-", "gemini-")
+      : testingAgent.model;
+
     setTesting(true);
     setTestResponse("");
     try {
       const response = await fetch(`/api/agents/${testingAgent.id}/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: testMessage }),
+        body: JSON.stringify({ message: testMessage, model: actualModel }),
       });
 
       if (response.ok) {
@@ -278,25 +363,34 @@ export default function AgentsPage() {
           </div>
           <div className="flex items-center gap-2">
             {agents.length > 0 && (
-              <div className="flex items-center gap-1 mr-2" title="Quick switch uses default models (GPT-4o / Gemini 2.5 Flash). Use Edit for specific models.">
+              <div className="flex items-center gap-1 mr-2" title="Quick switch uses default models.">
                 <span className="text-sm text-muted-foreground mr-1">Switch All:</span>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => switchAllAgentsToProvider('openai')}
+                  onClick={() => switchAllAgentsToBrand('Boomer')}
                   className="text-xs"
-                  title="Switch all agents to OpenAI GPT-4o"
+                  title="Switch all agents to Boomer (OpenAI)"
                 >
                   Boomer
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => switchAllAgentsToProvider('gemini')}
+                  onClick={() => switchAllAgentsToBrand('Kaaya')}
                   className="text-xs"
-                  title="Switch all agents to Gemini 2.5 Flash"
+                  title="Switch all agents to Kaaya (Gemini)"
                 >
                   Kaaya
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => switchAllAgentsToBrand('Creeper')}
+                  className="text-xs"
+                  title="Switch all agents to Creeper (Deepseek)"
+                >
+                  Creeper
                 </Button>
               </div>
             )}
@@ -307,89 +401,130 @@ export default function AgentsPage() {
                   New Agent
                 </Button>
               </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>{editingAgent ? "Edit Agent" : "Create New Agent"}</DialogTitle>
-                <DialogDescription>
-                  Configure your AI agent's behavior and personality.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>{editingAgent ? "Edit Agent" : "Create New Agent"}</DialogTitle>
+                  <DialogDescription>
+                    Configure your AI agent's behavior and personality.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid cols-1 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Name</Label>
+                      <Input
+                        placeholder="e.g., Support Bot"
+                        value={formData.name}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>AI Brand</Label>
+                      <Select
+                        value={getBrandFromModel(formData.model)}
+                        onValueChange={(brand) => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            model: getDefaultModelForBrand(brand),
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Boomer">Boomer (OpenAI)</SelectItem>
+                          <SelectItem value="Kaaya">Kaaya (Gemini)</SelectItem>
+                          <SelectItem value="Creeper">Creeper (Deepseek)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>AI Model</Label>
+                      <Select
+                        value={formData.model}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, model: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Boomer */}
+                          <SelectGroup>
+                            <SelectLabel>Boomer (OpenAI)</SelectLabel>
+                            <SelectItem value="gpt-4o">GPT-4o (Most Intelligent)</SelectItem>
+                            <SelectItem value="gpt-4o-mini">GPT-4o Mini (Smart & Fast)</SelectItem>
+                            <SelectItem value="gpt-4-turbo">GPT-4 Turbo (Premium)</SelectItem>
+                            <SelectItem value="gpt-3.5-turbo">GPT-3.5 (Economy)</SelectItem>
+                          </SelectGroup>
+
+                          {/* Kaaya */}
+                          <SelectGroup>
+                            <SelectLabel>Kaaya (Gemini)</SelectLabel>
+                            <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Fast & Efficient)</SelectItem>
+                            <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro (Advanced)</SelectItem>
+                            <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash (Budget)</SelectItem>
+                            <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro (Multimodal)</SelectItem>
+                          </SelectGroup>
+
+                          {/* Creeper */}
+                          <SelectGroup>
+                            <SelectLabel>Creeper (Gemini)</SelectLabel>
+                            <SelectItem value="creeper-2.5-flash">Creeper 2.5 Flash (Fast & Efficient)</SelectItem>
+                            <SelectItem value="creeper-2.5-pro">Creeper 2.5 Pro (Advanced)</SelectItem>
+                            <SelectItem value="creeper-1.5-flash">Creeper 1.5 Flash (Budget)</SelectItem>
+                            <SelectItem value="creeper-1.5-pro">Creeper 1.5 Pro (Multimodal)</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Boomer uses your OpenAI API key. Kaaya & Creeper use your Google API key.
+                      </p>
+                    </div>
+                  </div>
                   <div className="grid gap-2">
-                    <Label>Name</Label>
+                    <Label>Description</Label>
                     <Input
-                      placeholder="e.g., Support Bot"
-                      value={formData.name}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Brief description of this agent"
+                      value={formData.description}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>AI Model</Label>
-                    <Select
-                      value={formData.model}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, model: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="gpt-4o">Boomer GPT-4o (Most Intelligent)</SelectItem>
-                        <SelectItem value="gpt-4o-mini">Boomer GPT-4o Mini (Smart & Fast)</SelectItem>
-                        <SelectItem value="gpt-4-turbo">Boomer GPT-4 Turbo (Premium)</SelectItem>
-                        <SelectItem value="gpt-3.5-turbo">Boomer GPT-3.5 (Economy)</SelectItem>
-                        <SelectItem value="gemini-2.5-flash">Kaaya 2.5 Flash (Fast & Efficient)</SelectItem>
-                        <SelectItem value="gemini-2.5-pro">Kaaya 2.5 Pro (Advanced)</SelectItem>
-                        <SelectItem value="gemini-1.5-flash">Kaaya 1.5 Flash (Budget)</SelectItem>
-                        <SelectItem value="gemini-1.5-pro">Kaaya 1.5 Pro (Multimodal)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>System Prompt</Label>
+                    <Textarea
+                      className="min-h-[150px] font-mono text-sm"
+                      placeholder="You are a helpful assistant..."
+                      value={formData.systemPrompt}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, systemPrompt: e.target.value }))}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Temperature: {formData.temperature}</Label>
+                    <Slider
+                      value={[formData.temperature]}
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      onValueChange={([value]) => setFormData((prev) => ({ ...prev, temperature: value }))}
+                    />
                     <p className="text-xs text-muted-foreground">
-                      OpenAI models use your OpenAI API key | Gemini models use your Google API key
+                      Lower values make responses more focused, higher values more creative.
                     </p>
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Description</Label>
-                  <Input
-                    placeholder="Brief description of this agent"
-                    value={formData.description}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>System Prompt</Label>
-                  <Textarea
-                    className="min-h-[150px] font-mono text-sm"
-                    placeholder="You are a helpful assistant..."
-                    value={formData.systemPrompt}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, systemPrompt: e.target.value }))}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Temperature: {formData.temperature}</Label>
-                  <Slider
-                    value={[formData.temperature]}
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    onValueChange={([value]) => setFormData((prev) => ({ ...prev, temperature: value }))}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Lower values make responses more focused, higher values more creative.
-                  </p>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSubmit}>
-                  {editingAgent ? "Update Agent" : "Create Agent"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSubmit}>
+                    {editingAgent ? "Update Agent" : "Create Agent"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -418,7 +553,7 @@ export default function AgentsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Provider</TableHead>
+                    <TableHead>Brand</TableHead>
                     <TableHead>Model</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -434,25 +569,19 @@ export default function AgentsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant={getProviderFromModel(agent.model) === 'openai' ? "default" : "outline"}
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => switchAgentProvider(agent, 'openai')}
-                            title="Switch to OpenAI GPT-4o"
-                          >
-                            Boomer
-                          </Button>
-                          <Button
-                            variant={getProviderFromModel(agent.model) === 'gemini' ? "default" : "outline"}
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => switchAgentProvider(agent, 'gemini')}
-                            title="Switch to Gemini 2.5 Flash"
-                          >
-                            Kaaya
-                          </Button>
+                        <div className="flex items-center gap-1">
+                          {["Boomer", "Kaaya", "Creeper"].map((brand) => (
+                            <Button
+                              key={brand}
+                              variant={getBrandFromModel(agent.model) === brand ? "default" : "outline"}
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => switchAgentToBrand(agent, brand)}
+                              title={`Switch to ${brand}`}
+                            >
+                              {brand}
+                            </Button>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell>

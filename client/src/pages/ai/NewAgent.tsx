@@ -210,6 +210,22 @@ export default function NewAgent() {
                       <span className="font-medium">Kaaya 1.5 Pro</span>
                       <span className="ml-2 text-xs text-muted-foreground">(Multimodal)</span>
                     </SelectItem>
+                     <SelectItem value="gemini-1.5-pro">
+                      <span className="font-medium">Creeper 1.5 Flash</span>
+                      <span className="ml-2 text-xs text-muted-foreground">(Multimodal)</span>
+                    </SelectItem>
+                     <SelectItem value="gemini-1.5-pro">
+                      <span className="font-medium">Creeper 1.5 Pro</span>
+                      <span className="ml-2 text-xs text-muted-foreground">(Multimodal)</span>
+                    </SelectItem>
+                     <SelectItem value="gemini-1.5-pro">
+                      <span className="font-medium">Creeper 1.5 Turbo</span>
+                      <span className="ml-2 text-xs text-muted-foreground">(Multimodal)</span>
+                    </SelectItem>
+                     <SelectItem value="gemini-1.5-pro">
+                      <span className="font-medium">Creeper Pro Max</span>
+                      <span className="ml-2 text-xs text-muted-foreground">(Multimodal)</span>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">

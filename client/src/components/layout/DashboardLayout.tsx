@@ -24,6 +24,8 @@ import {
   UserPlus,
   UserCog,
   Workflow,
+  ChevronLeft,
+  ArrowBigLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -57,6 +59,7 @@ export default function DashboardLayout({
 }) {
   const [location, setLocation] = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
@@ -209,9 +212,9 @@ export default function DashboardLayout({
       href: "/reports",
       pageId: "reports-campaign",
       subItems: [
-        { label: "Delivery Report", href: "/reports/delivery" },
+        // { label: "Delivery Report", href: "/reports/delivery" },
         { label: "Broadcast Report", href: "/reports/broadcast" },
-        { label: "Campaign Perf.", href: "/campaigns/report" },
+        { label: "Campaign Perf.", href: "/reports/campaign" },
         // { label: "Replies", href: "/reports/replies" },
         { label: "Agent Perf.", href: "/reports/agents" },
         { label: "Contact Analytics", href: "/reports/contacts" },
@@ -235,6 +238,13 @@ export default function DashboardLayout({
       pageId: "user-management",
       adminOnly: true,
     },
+    // {
+    //   icon: UserCog,
+    //   label: "User Management Dashboard",
+    //   href: "/user-management-dashboard",
+    //   pageId: "user-management-dashboard",
+    //   adminOnly: true,
+    // },
     {
       icon: Settings,
       label: "Settings",
@@ -303,35 +313,38 @@ export default function DashboardLayout({
                     : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                   }
                 `}
+                title={isCollapsed ? item.label : ""}
               >
                 <div className="flex items-center gap-3">
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!isCollapsed && item.label}
                 </div>
-                {isOpen ? (
+                {!isCollapsed && (isOpen ? (
                   <ChevronDown className="h-3 w-3 opacity-50" />
                 ) : (
                   <ChevronRight className="h-3 w-3 opacity-50" />
-                )}
+                ))}
               </div>
             </CollapsibleTrigger>
-            <CollapsibleContent className="pl-9 space-y-1 animate-in slide-in-from-top-2 duration-200">
-              {item.subItems.map((sub: any) => (
-                <Link key={sub.href} href={sub.href}>
-                  <div
-                    className={`
-                      block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
-                      ${location === sub.href
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
-                      }
-                    `}
-                  >
-                    {sub.label}
-                  </div>
-                </Link>
-              ))}
-            </CollapsibleContent>
+            {!isCollapsed && (
+              <CollapsibleContent className="pl-9 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                {item.subItems.map((sub: any) => (
+                  <Link key={sub.href} href={sub.href}>
+                    <div
+                      className={`
+                        block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
+                        ${location === sub.href
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                          : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                        }
+                      `}
+                    >
+                      {sub.label}
+                    </div>
+                  </Link>
+                ))}
+              </CollapsibleContent>
+            )}
           </Collapsible>
         </div>
       );
@@ -347,15 +360,19 @@ export default function DashboardLayout({
               : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
             }
           `}
+          title={isCollapsed ? item.label : ""}
         >
           <div className="flex items-center gap-3">
-            <item.icon className="h-4 w-4" />
-            {item.label}
+            <item.icon className="h-4 w-4 shrink-0" />
+            {!isCollapsed && item.label}
           </div>
-          {item.badge && (
+          {!isCollapsed && item.badge && (
             <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-1.5 py-0.5 min-w-[20px] text-center">
               {item.badge > 99 ? "99+" : item.badge}
             </Badge>
+          )}
+          {isCollapsed && item.badge && (
+            <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500"></div>
           )}
         </div>
       </Link>
@@ -364,40 +381,59 @@ export default function DashboardLayout({
 
   const NavContent = () => (
     <div className="flex flex-col h-screen">
-      <div className="p-6 flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-          <MessageSquare className="h-6 w-6 text-primary-foreground" />
-        </div>
-        <div>
-          <h1 className="font-heading font-bold text-lg leading-none tracking-tight">
-            WhatsApp
-          </h1>
-          <span className="text-xs text-sidebar-foreground/60">
-            Business API
-          </span>
-        </div>
+      {/* Logo / Title */}
+      <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+        {!isCollapsed && (
+          <>
+            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
+              <MessageSquare className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="font-heading font-bold text-lg leading-none tracking-tight">
+                WhatsApp
+              </h1>
+              <span className="text-xs text-sidebar-foreground/60">
+                Business API
+              </span>
+            </div>
+          </>
+        )}
+        {isCollapsed && (
+          <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
+            <MessageSquare className="h-6 w-6 text-primary-foreground" />
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      {/* Collapse/Expand Button - MOVED TO TOP */}
+      <div className="px-4 pb-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="w-full flex items-center justify-center gap-2"
+          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <ChevronLeft className={`h-4 w-4 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} />
+          {!isCollapsed && <span className="text-xs">Collapse</span>}
+        </Button>
+      </div>
+
+      {/* Navigation Items */}
+      <div className="flex-1 px-3 py-1 space-y-1 overflow-y-auto">
         {filteredNavStructure.map((item, idx) => (
           <NavItem key={idx} item={item} />
         ))}
       </div>
 
-      <div className="p-4 border-t border-sidebar-border shrink-0">
-        {/* <div className="p-4 rounded-lg bg-sidebar-accent/50"> */}
-        {/* <h4 className="text-sm font-medium text-sidebar-foreground mb-1">Need Help?</h4> */}
-        {/* <p className="text-xs text-sidebar-foreground/60 mb-3">Check our documentation for guides.</p> */}
-        {/* <Button size="sm" variant="secondary" className="w-full text-xs">Documentation</Button> */}
-        {/* </div> */}
-      </div>
+      {/* Remove the old collapse button at the bottom — it’s now at the top */}
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex">
       {/* Desktop Sidebar */}
-      <div className="hidden md:block w-64 bg-[#9fadcc] text-black border-r border-sidebar-border shrink-0">
+      <div className={`hidden md:block bg-[#9fadcc] text-black border-r border-sidebar-border shrink-0 transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'}`}>
         <NavContent />
       </div>
 

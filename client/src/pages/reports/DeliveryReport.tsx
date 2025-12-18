@@ -33,7 +33,7 @@ interface DeliveryReportData {
 }
 
 export default function DeliveryReport() {
-  const [period, setPeriod] = useState("7");
+  const [period, setPeriod] = useState("30");
 
   const { data: reportData, isLoading } = useQuery<DeliveryReportData>({
     queryKey: ["/api/reports/delivery", period],

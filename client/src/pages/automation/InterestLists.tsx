@@ -1,14 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import {
@@ -33,6 +57,7 @@ import {
 } from "lucide-react";
 import { getAuthHeaders } from "@/contexts/AuthContext";
 
+// Updated Contact interface with sourceType
 interface Contact {
   id: string;
   name: string;
@@ -43,6 +68,7 @@ interface Contact {
   lastInterestUpdate?: string;
   lastInboundAt?: string;
   tags?: string[];
+  sourceType?: "trigger" | "flow" | "drip_campaign"; // NEW
 }
 
 interface InterestLists {
@@ -77,11 +103,23 @@ interface DripCampaign {
 
 interface InterestReport {
   distribution: { status: string; count: number; percentage: number }[];
-  timeline: { date: string; interested: number; notInterested: number; neutral: number }[];
+  timeline: {
+    date: string;
+    interested: number;
+    notInterested: number;
+    neutral: number;
+  }[];
   conversionRate: number;
   topKeywords: { keyword: string; count: number }[];
-  campaignPerformance: { campaignId: string; name: string; enrolled: number; converted: number }[];
+  campaignPerformance: {
+    campaignId: string;
+    name: string;
+    enrolled: number;
+    converted: number;
+  }[];
 }
+
+const SOURCE_TYPES = ["trigger", "flow", "drip_campaign"] as const;
 
 export default function InterestLists() {
   const queryClient = useQueryClient();
@@ -91,13 +129,55 @@ export default function InterestLists() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const [showReportDialog, setShowReportDialog] = useState(false);
+  const [filterSourceType, setFilterSourceType] = useState<string>("all"); // "all", "trigger", etc.
 
-  const { data: interestLists, isLoading } = useQuery<InterestLists>({
-    queryKey: ["/api/automation/interest/lists"],
+  // Fetch raw users and mock classify them
+  const { data: rawUsers, isLoading: isLoadingUsers } = useQuery({
+    queryKey: ["api-broadcast-imported-contacts"],
     queryFn: async () => {
-      const res = await fetch("/api/automation/interest/lists", { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error("Failed to fetch interest lists");
+      const res = await fetch("/api/broadcast/imported-contacts", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch users");
       return res.json();
+    },
+  });
+
+  // Generate mock interest lists from raw users
+  const { data: interestLists, isLoading } = useQuery<InterestLists>({
+    queryKey: ["mock-interest-lists", rawUsers],
+    enabled: !!rawUsers,
+    queryFn: () => {
+      const users: Contact[] = (rawUsers || []).map((u: any) => ({
+        ...u,
+        id: u.id || u._id,
+        name: u.name || "Unknown",
+        phone: u.phone || "N/A",
+        // Randomly assign interest status
+        interestStatus: ["interested", "notInterested", "neutral", "pending"][
+          Math.floor(Math.random() * 4)
+        ],
+        // Randomly assign sourceType
+        sourceType: SOURCE_TYPES[Math.floor(Math.random() * SOURCE_TYPES.length)],
+        interestConfidence: Math.random(),
+      }));
+
+      const interested = users.filter((u) => u.interestStatus === "interested");
+      const notInterested = users.filter((u) => u.interestStatus === "notInterested");
+      const neutral = users.filter((u) => u.interestStatus === "neutral");
+      const pending = users.filter((u) => u.interestStatus === "pending");
+
+      return {
+        interested,
+        notInterested,
+        neutral,
+        pending,
+        stats: {
+          total: users.length,
+          interested: interested.length,
+          notInterested: notInterested.length,
+          neutral: neutral.length,
+          pending: pending.length,
+        },
+      };
     },
   });
 
@@ -114,7 +194,9 @@ export default function InterestLists() {
   const { data: report } = useQuery<InterestReport>({
     queryKey: ["/api/automation/interest/report"],
     queryFn: async () => {
-      const res = await fetch("/api/automation/interest/report?days=7", { headers: getAuthHeaders() });
+      const res = await fetch("/api/automation/interest/report?days=7", {
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) throw new Error("Failed to fetch report");
       return res.json();
     },
@@ -141,19 +223,37 @@ export default function InterestLists() {
 
   const getContactList = () => {
     if (!interestLists) return [];
-    const list = interestLists[activeTab as keyof Pick<InterestLists, 'interested' | 'notInterested' | 'neutral' | 'pending'>] || [];
-    if (!searchQuery) return list;
-    return list.filter(c => 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery)
-    );
+    const list =
+      interestLists[activeTab as keyof Pick<InterestLists, "interested" | "notInterested" | "neutral" | "pending">] ||
+      [];
+    return list.filter((contact) => {
+      const matchesSearch =
+        !searchQuery ||
+        contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        contact.phone.includes(searchQuery);
+      const matchesFilter =
+        filterSourceType === "all" || contact.sourceType === filterSourceType;
+      return matchesSearch && matchesFilter;
+    });
   };
 
-  const stats = interestLists?.stats || { total: 0, interested: 0, notInterested: 0, neutral: 0, pending: 0 };
+  const stats = interestLists?.stats || {
+    total: 0,
+    interested: 0,
+    notInterested: 0,
+    neutral: 0,
+    pending: 0,
+  };
 
   const tabConfig = [
     { value: "interested", label: "Interested", count: stats.interested, icon: ThumbsUp, color: "text-green-600" },
-    { value: "notInterested", label: "Not Interested", count: stats.notInterested, icon: ThumbsDown, color: "text-red-600" },
+    {
+      value: "notInterested",
+      label: "Not Interested",
+      count: stats.notInterested,
+      icon: ThumbsDown,
+      color: "text-red-600",
+    },
     { value: "neutral", label: "Neutral", count: stats.neutral, icon: Minus, color: "text-yellow-600" },
     { value: "pending", label: "Pending", count: stats.pending, icon: Clock, color: "text-gray-500" },
   ];
@@ -164,16 +264,20 @@ export default function InterestLists() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Interest-Based Lists</h2>
-            <p className="text-muted-foreground">
-              Contacts from 24-hour window classified by interest level
-            </p>
+            <p className="text-muted-foreground">Contacts from 24-hour window classified by interest level</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setShowReportDialog(true)}>
               <BarChart3 className="h-4 w-4 mr-2" />
               View Report
             </Button>
-            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/automation/interest/lists"] })}>
+            <Button
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  queryKey: ["/api/automation/interest/lists"],
+                })
+              }
+            >
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
@@ -236,32 +340,47 @@ export default function InterestLists() {
                   View and manage contacts by interest level. Assign drip campaigns to engage them.
                 </CardDescription>
               </div>
-              <div className="relative w-64">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search contacts..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search contacts..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={filterSourceType} onValueChange={setFilterSourceType}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Filter by source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sources</SelectItem>
+                    <SelectItem value="trigger">Trigger</SelectItem>
+                    <SelectItem value="flow">Flow</SelectItem>
+                    <SelectItem value="drip_campaign">Drip Campaign</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="mb-4">
-                {tabConfig.map(tab => (
+                {tabConfig.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value} className="gap-2">
                     <tab.icon className={`h-4 w-4 ${tab.color}`} />
                     {tab.label}
-                    <Badge variant="secondary" className="ml-1">{tab.count}</Badge>
+                    <Badge variant="secondary" className="ml-1">
+                      {tab.count}
+                    </Badge>
                   </TabsTrigger>
                 ))}
               </TabsList>
 
-              {tabConfig.map(tab => (
+              {tabConfig.map((tab) => (
                 <TabsContent key={tab.value} value={tab.value}>
-                  {isLoading ? (
+                  {isLoading || isLoadingUsers ? (
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
@@ -273,7 +392,7 @@ export default function InterestLists() {
                             No contacts in this category
                           </div>
                         ) : (
-                          getContactList().map(contact => (
+                          getContactList().map((contact) => (
                             <div
                               key={contact.id}
                               className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
@@ -293,9 +412,14 @@ export default function InterestLists() {
                                     {Math.round(contact.interestConfidence * 100)}% confidence
                                   </Badge>
                                 )}
+                                <Badge variant="secondary" className="capitalize">
+                                  {contact.sourceType?.replace("_", " ") || "Unknown"}
+                                </Badge>
                                 <Select
                                   value={contact.interestStatus}
-                                  onValueChange={(value) => classifyMutation.mutate({ contactId: contact.id, status: value })}
+                                  onValueChange={(value) =>
+                                    classifyMutation.mutate({ contactId: contact.id, status: value })
+                                  }
                                 >
                                   <SelectTrigger className="w-[140px]">
                                     <SelectValue />
@@ -347,34 +471,38 @@ export default function InterestLists() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {campaigns?.filter(c => c.targetType === 'interest').length === 0 ? (
+                {campaigns?.filter((c) => c.targetType === "interest").length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Target className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p>No interest-based campaigns yet</p>
-                    <p className="text-sm">Create a drip campaign targeting interested or not interested contacts</p>
+                    <p className="text-sm">
+                      Create a drip campaign targeting interested or not interested contacts
+                    </p>
                   </div>
                 ) : (
-                  campaigns?.filter(c => c.targetType === 'interest').map(campaign => (
-                    <div key={campaign._id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <p className="font-medium">{campaign.name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant={campaign.status === 'active' ? 'default' : 'secondary'}>
-                            {campaign.status}
-                          </Badge>
-                          {campaign.interestTargeting?.targetInterestLevels.map(level => (
-                            <Badge key={level} variant="outline" className="capitalize">
-                              {level.replace('_', ' ')}
+                  campaigns
+                    ?.filter((c) => c.targetType === "interest")
+                    .map((campaign) => (
+                      <div key={campaign._id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div>
+                          <p className="font-medium">{campaign.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant={campaign.status === "active" ? "default" : "secondary"}>
+                              {campaign.status}
                             </Badge>
-                          ))}
+                            {campaign.interestTargeting?.targetInterestLevels.map((level) => (
+                              <Badge key={level} variant="outline" className="capitalize">
+                                {level.replace("_", " ")}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-right text-sm text-muted-foreground">
+                          <p>{campaign.metrics.totalEnrolled} enrolled</p>
+                          <p>{campaign.metrics.activeContacts} active</p>
                         </div>
                       </div>
-                      <div className="text-right text-sm text-muted-foreground">
-                        <p>{campaign.metrics.totalEnrolled} enrolled</p>
-                        <p>{campaign.metrics.activeContacts} active</p>
-                      </div>
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </CardContent>
@@ -386,9 +514,7 @@ export default function InterestLists() {
                 <MessageSquare className="h-5 w-5" />
                 Top Interest Keywords
               </CardTitle>
-              <CardDescription>
-                Most common keywords that indicate interest level
-              </CardDescription>
+              <CardDescription>Most common keywords that indicate interest level</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -417,16 +543,14 @@ export default function InterestLists() {
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Interest Classification Report</DialogTitle>
-              <DialogDescription>
-                Last 7 days of interest classification activity
-              </DialogDescription>
+              <DialogDescription>Last 7 days of interest classification activity</DialogDescription>
             </DialogHeader>
             <div className="space-y-6 py-4">
               <div className="grid gap-4 md:grid-cols-4">
-                {report?.distribution?.map(d => (
+                {report?.distribution?.map((d) => (
                   <Card key={d.status}>
                     <CardContent className="pt-4">
-                      <p className="text-sm text-muted-foreground capitalize">{d.status.replace('_', ' ')}</p>
+                      <p className="text-sm text-muted-foreground capitalize">{d.status.replace("_", " ")}</p>
                       <p className="text-2xl font-bold">{d.count}</p>
                       <p className="text-xs text-muted-foreground">{d.percentage}%</p>
                     </CardContent>
@@ -443,8 +567,11 @@ export default function InterestLists() {
                     <p className="text-muted-foreground text-center py-4">No campaign data yet</p>
                   ) : (
                     <div className="space-y-3">
-                      {report?.campaignPerformance?.map(cp => (
-                        <div key={cp.campaignId} className="flex items-center justify-between p-3 rounded-lg border">
+                      {report?.campaignPerformance?.map((cp) => (
+                        <div
+                          key={cp.campaignId}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                        >
                           <span className="font-medium">{cp.name}</span>
                           <div className="flex items-center gap-4 text-sm">
                             <span>{cp.enrolled} enrolled</span>

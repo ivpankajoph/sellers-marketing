@@ -80,6 +80,8 @@ import TokenCardMain from "./pages/AItokens";
 import WhatsTokenCardMain from "./pages/WhatsappTokens";
 import ContactUsageDetail from "./pages/ContactUsageDetails";
 import AiUsageDashboard from "./pages/AiUsageDashboard";
+import UserManagementDashboard from "./pages/UserManagementDashboard";
+import Register from "./pages/Register";
 function ProtectedRoute({
   component: Component,
 }: {
@@ -323,6 +325,16 @@ function Router() {
         {() => <ProtectedRoute component={UserManagement} />}
       </Route>
 
+      <Route path="/user-management-dashboard">
+        {() => <ProtectedRoute component={UserManagementDashboard} />}
+      </Route>
+
+      <Route path="/register">
+        {() => {
+          const { isAuthenticated } = useAuth();
+          return isAuthenticated ? <Redirect to="/" /> : <Register />;
+        }}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

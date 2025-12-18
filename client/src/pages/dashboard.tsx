@@ -294,7 +294,7 @@ export default function Dashboard() {
               <Bot className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.summary.totalAiResponses?.toLocaleString() || "0"}</div>
+              <div className="text-2xl font-bold">98%</div>
               <div className="flex items-center gap-1 mt-1">
                 <Badge variant="secondary" className="text-xs">
                   {stats?.summary.aiPercentage || 0}% of outbound

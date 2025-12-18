@@ -49,7 +49,7 @@ router.get('/roles', async (_req: Request, res: Response) => {
   }
 });
 
-router.get('/', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
     const users = await SystemUser.find({ role: { $ne: 'super_admin' } })
       .select('-password')
