@@ -172,7 +172,7 @@ export default function UserActivityReportsPage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">User Activity Reports</h1>
+            <h1 className="text-2xl font-bold">Team Member Reports</h1>
             <p className="text-muted-foreground">Track team member actions and system activity</p>
           </div>
           <div className="flex items-center gap-2">

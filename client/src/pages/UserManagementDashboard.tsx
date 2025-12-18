@@ -41,8 +41,8 @@ interface User {
 const mockUsers: User[] = [
   {
     id: '1',
-    name: 'John Doe',
-    email: 'john@example.com',
+    name: 'Your Name',
+    email: 'Your Email',
     role: 'Admin',
     status: 'active',
     createdAt: '2024-01-15T10:30:00Z',

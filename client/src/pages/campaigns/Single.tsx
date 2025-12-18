@@ -160,7 +160,7 @@ export default function Single() {
                 <div className="relative">
                   <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
-                    placeholder="John Doe" 
+                    placeholder="Your Name" 
                     className="pl-9"
                     value={recipientName}
                     onChange={(e) => setRecipientName(e.target.value)}

@@ -21,8 +21,8 @@ const SystemUserSchema = new Schema<ISystemUser>({
   name: { type: String, required: true },
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { 
-    type: String, 
+  role: {
+    type: String,
     enum: ['super_admin', 'sub_admin', 'manager', 'user'],
     default: 'user'
   },
@@ -33,7 +33,7 @@ const SystemUserSchema = new Schema<ISystemUser>({
   updatedAt: { type: Date, default: Date.now }
 });
 
-SystemUserSchema.pre('save', function() {
+SystemUserSchema.pre('save', function () {
   this.updatedAt = new Date();
 });
 
@@ -158,7 +158,7 @@ export const AVAILABLE_PAGES = [
       { id: "agent-performance", name: "Agent Performance", path: "/reports/agents" },
       { id: "contact-analytics", name: "Contact Analytics", path: "/reports/contacts" },
       { id: "lead-assignments", name: "Lead Assignments", path: "/reports/lead-assignments" },
-      { id: "user-activity", name: "User Activity", path: "/reports/user-activity" },
+      { id: "user-activity", name: "Team Member Reports", path: "/reports/user-activity" },
       { id: "blocked-contacts", name: "Blocked Contacts", path: "/reports/blocked" },
       { id: "user-engagement", name: "User Engagement", path: "/reports/user-engagement" },
     ],
@@ -197,7 +197,7 @@ export const ROLE_LABELS: Record<string, string> = {
   'super_admin': 'Super Admin',
   'sub_admin': 'Sub Admin',
   'manager': 'Manager',
-  'user': 'Regular User'
+  'user': 'Team Member'
 };
 
 export function generateUsername(name: string): string {

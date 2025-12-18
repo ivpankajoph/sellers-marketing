@@ -269,7 +269,7 @@ export default function Contacts() {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <Textarea
-                    placeholder="John Doe,+1234567890,john@email.com,VIP;Customer"
+                    placeholder="Your Name,+1234567890,john@email.com,VIP;Customer"
                     value={importData}
                     onChange={(e) => setImportData(e.target.value)}
                     rows={6}
@@ -305,7 +305,7 @@ export default function Contacts() {
                   <div className="space-y-2">
                     <Label>Name *</Label>
                     <Input
-                      placeholder="John Doe"
+                      placeholder="Your Name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     />
@@ -322,7 +322,7 @@ export default function Contacts() {
                     <Label>Email</Label>
                     <Input
                       type="email"
-                      placeholder="john@example.com"
+                      placeholder="Your Email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     />
@@ -462,7 +462,7 @@ export default function Contacts() {
             <div className="space-y-2">
               <Label>Name *</Label>
               <Input
-                placeholder="John Doe"
+                placeholder="Your Name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
@@ -479,7 +479,7 @@ export default function Contacts() {
               <Label>Email</Label>
               <Input
                 type="email"
-                placeholder="john@example.com"
+                placeholder="Your Email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               />
