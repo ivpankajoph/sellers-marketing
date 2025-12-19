@@ -16,7 +16,7 @@ import { getUserId } from '../auth/auth.routes';
 import { contactAnalyticsService } from '../contactAnalytics/contactAnalytics.service';
 import { interestClassificationService } from '../automation/interest/interest.service';
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
+const WHATSAPP_TOKEN = process.env.SYSTEM_USER_TOKEN_META
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'whatsapp_webhook_verify_token_2025';
 

@@ -5,7 +5,7 @@ import { autoEnrollContact } from '../automation/drips/drip.service';
 import { Contact } from '../storage/mongodb.adapter';
 
 
-const FB_USER_OR_PAGE_TOKEN = process.env.SYSTEM_USER_TOKEN_META || process.env.FB_ACCESS_TOKEN;
+const FB_USER_OR_PAGE_TOKEN = process.env.SYSTEM_USER_TOKEN_META
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
 

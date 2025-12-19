@@ -1237,7 +1237,7 @@ export async function registerRoutes(
       }
 
       if (!token) {
-        token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
+        token = process.env.SYSTEM_USER_TOKEN_META;
       }
       if (!wabaId) {
         wabaId = process.env.WABA_ID;
@@ -1339,7 +1339,7 @@ export async function registerRoutes(
 
       // Fallback to environment variables
       if (!token) {
-        token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
+        token = process.env.SYSTEM_USER_TOKEN_META;
       }
       if (!wabaId) {
         wabaId = process.env.WABA_ID;
@@ -1488,7 +1488,7 @@ export async function registerRoutes(
       }
 
       if (!token) {
-        token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || process.env.FB_ACCESS_TOKEN;
+        token = process.env.SYSTEM_USER_TOKEN_META;
       }
       if (!wabaId) {
         wabaId = process.env.WABA_ID;

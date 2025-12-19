@@ -277,12 +277,12 @@ async function seedAdminCredentials(adminUserId: string): Promise<void> {
       return;
     }
 
-    const whatsappToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN || '';
+    const whatsappToken = process.env.SYSTEM_USER_TOKEN_META;
     const phoneNumberId = process.env.PHONE_NUMBER_ID || '';
     const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '';
     const webhookVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN || '';
     const openaiApiKey = process.env.OPENAI_API_KEY || '';
-    const facebookAccessToken = process.env.FB_ACCESS_TOKEN || process.env.FACEBOOK_ACCESS_TOKEN || '';
+    const facebookAccessToken = process.env.SYSTEM_USER_TOKEN_META
     const facebookPageId = process.env.FACEBOOK_PAGE_ID || '';
     const appId = process.env.FACEBOOK_APP_ID || '';
     const appSecret = process.env.FACEBOOK_APP_SECRET || '';
