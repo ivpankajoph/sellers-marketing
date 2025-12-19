@@ -520,6 +520,24 @@ const otpSchema = new mongoose.Schema({
   verified: { type: Boolean, default: false }
 });
 
+const IntegrationSchema = new mongoose.Schema(
+  {
+    userId: { type: String, required: true, unique: true },
+
+    OPENAI_API_KEY: String,
+    GEMINI_API_KEY: String,
+
+    FB_PAGE_ID: String,
+    PHONE_NUMBER_ID: String,
+    WABA_ID: String,
+
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: String,
+    SYSTEM_USER_TOKEN_META: String,
+  },
+  { timestamps: true }
+);
+
+export const Integration = mongoose.models.Integration || mongoose.model('Integration', IntegrationSchema);
 export const OTP = mongoose.models.OTP || mongoose.model('OTP', otpSchema);
 export const Agent = mongoose.models.Agent || mongoose.model('Agent', AgentSchema);
 export const Form = mongoose.models.Form || mongoose.model('Form', FormSchema);

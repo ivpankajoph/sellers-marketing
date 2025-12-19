@@ -45,6 +45,46 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+
+  app.post("/save", async (req, res) => {
+  try {
+    const {
+      userId,
+      OPENAI_API_KEY,
+      GEMINI_API_KEY,
+      FB_PAGE_ID,
+      PHONE_NUMBER_ID,
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      WABA_ID,
+      SYSTEM_USER_TOKEN_META,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "Missing userId" });
+    }
+
+    await mongodb.Integration.findOneAndUpdate(
+      { userId },
+      {
+        userId,
+        OPENAI_API_KEY: OPENAI_API_KEY,
+        GEMINI_API_KEY: GEMINI_API_KEY,
+        FB_PAGE_ID,
+        PHONE_NUMBER_ID,
+        WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        WABA_ID,
+        SYSTEM_USER_TOKEN_META: SYSTEM_USER_TOKEN_META,
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
   app.get("/api/messages/stats/:contactId", async (req, res) => {
     try {
       const { contactId } = req.params;
