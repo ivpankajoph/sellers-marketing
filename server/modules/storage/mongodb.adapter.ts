@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import dotenv from 'dotenv';
-import e from 'express';
+
 dotenv.config();
 let isConnected = false;
 
@@ -37,6 +37,7 @@ const AgentSchema = new Schema({
   isActive: { type: Boolean, default: true },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'agents' });
 
 const FormSchema = new Schema({
@@ -154,6 +155,7 @@ const ImportedContactSchema = new Schema({
   source: { type: String, default: 'import' },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'imported_contacts' });
 
 const ContactAgentSchema = new Schema({
@@ -186,6 +188,7 @@ const ContactSchema = new Schema({
   assignedDripCampaignIds: { type: [String], default: [] },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'contacts' });
 
 const InterestClassificationLogSchema = new Schema({
@@ -219,6 +222,7 @@ const MessageSchema = new Schema({
   replyToContent: { type: String },
   mediaUrl: { type: String },
   whatsappMessageId: { type: String, index: true },
+  adminId: { type: String, required: true },
 }, { collection: 'messages' });
 
 const ChatSchema = new Schema({
@@ -246,6 +250,7 @@ const CampaignSchema = new Schema({
   repliedCount: { type: Number, default: 0 },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'campaigns' });
 
 const TemplateSchema = new Schema({
@@ -262,6 +267,7 @@ const TemplateSchema = new Schema({
   lastSyncedAt: { type: String },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'templates' });
 
 const AutomationSchema = new Schema({
@@ -275,6 +281,7 @@ const AutomationSchema = new Schema({
   isActive: { type: Boolean, default: true },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'automations' });
 
 const UserSchema = new Schema({
@@ -286,6 +293,7 @@ const UserSchema = new Schema({
   email: { type: String },
   role: { type: String, default: 'user' },
   createdAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'users' });
 
 const TeamMemberSchema = new Schema({
@@ -297,7 +305,9 @@ const TeamMemberSchema = new Schema({
   permissions: { type: [String], default: [] },
   isActive: { type: Boolean, default: true },
   createdAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'team_members' });
+
 
 const WhatsappSettingsSchema = new Schema({
   id: { type: String, required: true, unique: true },
@@ -307,11 +317,13 @@ const WhatsappSettingsSchema = new Schema({
   webhookVerifyToken: { type: String },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'whatsapp_settings' });
 
 const BillingSchema = new Schema({
   id: { type: String, required: true, unique: true },
   credits: { type: Number, default: 0 },
+  adminId: { type: String, required: true },
   transactions: [{
     id: { type: String },
     type: { type: String, enum: ['purchase', 'usage'] },
@@ -329,6 +341,7 @@ const PrefilledTextMappingSchema = new Schema({
   isActive: { type: Boolean, default: true },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'prefilled_text_mappings' });
 
 const ScheduledBroadcastSchema = new Schema({
@@ -349,6 +362,7 @@ const ScheduledBroadcastSchema = new Schema({
   createdAt: { type: String, required: true },
   sentCount: { type: Number, default: 0 },
   failedCount: { type: Number, default: 0 },
+  adminId: { type: String, required: true },
 }, { collection: 'scheduled_broadcasts' });
 
 const BlockedContactSchema = new Schema({
@@ -359,6 +373,7 @@ const BlockedContactSchema = new Schema({
   reason: { type: String, default: '' },
   blockedAt: { type: String, required: true },
   isActive: { type: Boolean, default: true },
+  adminId: { type: String, required: true },
 }, { collection: 'blocked_contacts' });
 
 BlockedContactSchema.index({ userId: 1, phone: 1 }, { unique: true });
@@ -380,7 +395,9 @@ const UserCredentialsSchema = new Schema({
   lastVerifiedAt: { type: String },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'user_credentials' });
+
 
 const ContactAnalyticsSchema = new Schema({
   id: { type: String, required: true, unique: true },
@@ -468,6 +485,7 @@ const ActivityLogSchema = new Schema({
   leadAssignmentId: { type: String },
   metadata: { type: Schema.Types.Mixed, default: {} },
   timestamp: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'activity_logs' });
 
 ActivityLogSchema.index({ userId: 1, timestamp: -1 });
@@ -489,6 +507,7 @@ const UserActivityStatsSchema = new Schema({
   activeHours: { type: [Number], default: [] },
   createdAt: { type: String, required: true },
   updatedAt: { type: String, required: true },
+  adminId: { type: String, required: true },
 }, { collection: 'user_activity_stats' });
 
 UserActivityStatsSchema.index({ userId: 1, date: -1 });

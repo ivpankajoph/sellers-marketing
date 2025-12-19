@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const WABA_ID = process.env.WABA_ID;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || "848441401690739"; // From your output
-const TOKEN = process.env.WHATSAPP_PERMANENT_TOKEN;
+const TOKEN = process.env.SYSTEM_USER_TOKEN_META;
 const API_VERSION = "v21.0"; // or v22.0
 
 // Step 1: Upload public key to WABA

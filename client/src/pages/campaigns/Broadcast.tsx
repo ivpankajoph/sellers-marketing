@@ -318,7 +318,8 @@ export default function Broadcast() {
     }
 
     setIsSending(true);
-
+    
+    
     try {
       const payload = {
         contacts: targetContacts,

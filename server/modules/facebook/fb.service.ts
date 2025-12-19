@@ -4,16 +4,15 @@ import * as integrationService from '../integrations/integration.service';
 import { autoEnrollContact } from '../automation/drips/drip.service';
 import { Contact } from '../storage/mongodb.adapter';
 
-// Facebook tokens - we can use either a Page Access Token directly
-// or derive it from a User Access Token + Page ID
-const FB_USER_OR_PAGE_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.FB_ACCESS_TOKEN;
+
+const FB_USER_OR_PAGE_TOKEN = process.env.SYSTEM_USER_TOKEN_META || process.env.FB_ACCESS_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
-// Cache for the actual Page Access Token
+
 let cachedPageAccessToken: string | null = null;
 let cachedPageId: string | null = null;
 
-// Function to get Facebook credentials from Connected Apps or environment
+
 async function getFacebookCredentials(userId: string = 'system'): Promise<{ token: string; pageId: string } | null> {
   const integrationCreds = await integrationService.getDecryptedCredentials(userId, 'facebook');
   if (integrationCreds?.accessToken && integrationCreds?.pageId) {
@@ -34,8 +33,7 @@ async function getFacebookCredentials(userId: string = 'system'): Promise<{ toke
   return null;
 }
 
-// Function to get the actual Page Access Token
-// If user provides a User Access Token, we fetch the Page Access Token from /me/accounts
+
 async function getPageAccessToken(userId: string = 'system'): Promise<string> {
   const creds = await getFacebookCredentials(userId);
   

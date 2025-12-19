@@ -397,7 +397,5 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
     </div>
   );
 
-  // For desktop: full height
-  // For mobile: auto height (Sheet handles scrolling)
   return isMobile ? <NavContent /> : <div className="h-screen"><NavContent /></div>;
 }
