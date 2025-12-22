@@ -3,7 +3,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Upload,
@@ -24,7 +30,13 @@ import { PhonePreview } from "@/components/ui/phone-preview";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -84,13 +96,17 @@ interface SavedContact {
 export default function Broadcast() {
   const [, setLocation] = useLocation();
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
-  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>([]);
+  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>(
+    []
+  );
   const [message, setMessage] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedTemplateName, setSelectedTemplateName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [messageType, setMessageType] = useState<"template" | "custom" | "ai_agent">("template");
+  const [messageType, setMessageType] = useState<
+    "template" | "custom" | "ai_agent"
+  >("template");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isScheduled, setIsScheduled] = useState(false);
   const [selectedListId, setSelectedListId] = useState("");
@@ -137,7 +153,8 @@ export default function Broadcast() {
     const q = searchQuery.toLowerCase();
     return contacts.filter(
       (contact) =>
-        contact.name.toLowerCase().includes(q) || contact.phone.includes(searchQuery)
+        contact.name.toLowerCase().includes(q) ||
+        contact.phone.includes(searchQuery)
     );
   }, [contacts, searchQuery]);
 
@@ -192,11 +209,16 @@ export default function Broadcast() {
           `Imported ${data.validContacts} of ${data.totalRows} rows. ${data.errors.length} rows had issues.`
         );
       } else {
-        toast.success(`Successfully imported ${data.validContacts} contacts from ${data.totalRows} rows`);
+        toast.success(
+          `Successfully imported ${data.validContacts} contacts from ${data.totalRows} rows`
+        );
       }
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Failed to import file. Check that your file has 'Name' and 'Mobile' columns.");
+      toast.error(
+        error.message ||
+          "Failed to import file. Check that your file has 'Name' and 'Mobile' columns."
+      );
     },
   });
 
@@ -244,7 +266,10 @@ export default function Broadcast() {
     }
   };
 
-  const toggleContact = (contactId: string, checked: boolean | "indeterminate") => {
+  const toggleContact = (
+    contactId: string,
+    checked: boolean | "indeterminate"
+  ) => {
     const isChecked = checked === true;
     if (isChecked) {
       setSelectedContactIds((prev) => [...prev, contactId]);
@@ -318,18 +343,32 @@ export default function Broadcast() {
     }
 
     setIsSending(true);
-    
-    
+
+    const userDataString = localStorage.getItem("whatsapp_auth_user");
+    if (!userDataString) {
+      alert("User not logged in");
+
+      return;
+    }
+
+    const userData = JSON.parse(userDataString);
+    const userId = userData.id;
     try {
       const payload = {
         contacts: targetContacts,
         messageType,
-        templateName: messageType === "template" ? selectedTemplateName || "hello_world" : undefined,
+        templateName:
+          messageType === "template"
+            ? selectedTemplateName || "hello_world"
+            : undefined,
         customMessage: messageType === "custom" ? message : undefined,
         agentId: messageType === "ai_agent" ? selectedAgentId : undefined,
         campaignName: campaignName.trim(),
         isScheduled,
-        scheduledTime: isScheduled ? new Date(scheduledTime).toISOString() : undefined,
+        senderId: userId,
+        scheduledTime: isScheduled
+          ? new Date(scheduledTime).toISOString()
+          : undefined,
       };
 
       console.log("📤 Sending broadcast payload:", payload);
@@ -350,11 +389,19 @@ export default function Broadcast() {
       }
 
       if (isScheduled) {
-        toast.success(`Broadcast scheduled successfully for ${new Date(scheduledTime).toLocaleString()}`);
+        toast.success(
+          `Broadcast scheduled successfully for ${new Date(
+            scheduledTime
+          ).toLocaleString()}`
+        );
       } else if (result.failed > 0) {
-        toast.warning(`Broadcast partially sent: ${result.successful} successful, ${result.failed} failed`);
+        toast.warning(
+          `Broadcast partially sent: ${result.successful} successful, ${result.failed} failed`
+        );
       } else {
-        toast.success(`Broadcast sent successfully to ${result.successful} contacts`);
+        toast.success(
+          `Broadcast sent successfully to ${result.successful} contacts`
+        );
       }
 
       // Reset form
@@ -400,22 +447,25 @@ export default function Broadcast() {
   const totalSelected = selectedListId
     ? broadcastLists.find((l) => l.id === selectedListId)?.contacts.length || 0
     : importedContacts.length > 0
-      ? importedContacts.length
-      : selectedContactIds.length;
+    ? importedContacts.length
+    : selectedContactIds.length;
 
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Send Broadcast</h2>
-          <p className="text-muted-foreground">Send bulk messages to your contact lists.</p>
+          <p className="text-muted-foreground">
+            Send bulk messages to your contact lists.
+          </p>
         </div>
 
         {/* CAMPAIGN NAME - NOW REQUIRED */}
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <strong>Campaign name is required</strong> to track and analyze your broadcasts.
+            <strong>Campaign name is required</strong> to track and analyze your
+            broadcasts.
           </AlertDescription>
         </Alert>
 
@@ -427,10 +477,16 @@ export default function Broadcast() {
             placeholder="e.g., Black Friday Sale, Product Launch 2024"
             value={campaignName}
             onChange={(e) => setCampaignName(e.target.value)}
-            className={!campaignName.trim() ? "border-red-300 focus-visible:ring-red-500" : ""}
+            className={
+              !campaignName.trim()
+                ? "border-red-300 focus-visible:ring-red-500"
+                : ""
+            }
           />
           {!campaignName.trim() && (
-            <p className="text-sm text-red-500">Campaign name is required to send broadcasts</p>
+            <p className="text-sm text-red-500">
+              Campaign name is required to send broadcasts
+            </p>
           )}
         </div>
 
@@ -442,7 +498,8 @@ export default function Broadcast() {
                 1. Select Audience
               </CardTitle>
               <CardDescription>
-                Choose who will receive this message. Selected: {totalSelected} contacts
+                Choose who will receive this message. Selected: {totalSelected}{" "}
+                contacts
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -478,7 +535,9 @@ export default function Broadcast() {
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Create Broadcast List</DialogTitle>
-                      <DialogDescription>Save selected contacts as a reusable list</DialogDescription>
+                      <DialogDescription>
+                        Save selected contacts as a reusable list
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
@@ -491,12 +550,18 @@ export default function Broadcast() {
                       </div>
                       <p className="text-sm text-muted-foreground">
                         This will save{" "}
-                        {importedContacts.length > 0 ? importedContacts.length : selectedContactIds.length}{" "}
+                        {importedContacts.length > 0
+                          ? importedContacts.length
+                          : selectedContactIds.length}{" "}
                         contacts to the list.
                       </p>
                     </div>
                     <DialogFooter>
-                      <Button type="button" onClick={handleCreateList} disabled={createListMutation.isPending}>
+                      <Button
+                        type="button"
+                        onClick={handleCreateList}
+                        disabled={createListMutation.isPending}
+                      >
                         {createListMutation.isPending && (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         )}
@@ -565,7 +630,12 @@ export default function Broadcast() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <Button variant="outline" size="sm" type="button" onClick={selectAllContacts}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={selectAllContacts}
+                    >
                       {selectedContactIds.length === filteredContacts.length
                         ? "Deselect All"
                         : "Select All"}
@@ -582,7 +652,10 @@ export default function Broadcast() {
                           key={contact.id}
                           className="flex items-center gap-3 p-3 border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
                           onClick={() =>
-                            toggleContact(contact.id, !selectedContactIds.includes(contact.id))
+                            toggleContact(
+                              contact.id,
+                              !selectedContactIds.includes(contact.id)
+                            )
                           }
                         >
                           <Checkbox
@@ -593,7 +666,9 @@ export default function Broadcast() {
                           />
                           <div className="flex-1">
                             <div className="font-medium">{contact.name}</div>
-                            <div className="text-sm text-muted-foreground">{contact.phone}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {contact.phone}
+                            </div>
                           </div>
                           {selectedContactIds.includes(contact.id) && (
                             <Check className="h-4 w-4 text-primary" />
@@ -622,7 +697,10 @@ export default function Broadcast() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Tabs value={messageType} onValueChange={(v) => setMessageType(v as any)}>
+              <Tabs
+                value={messageType}
+                onValueChange={(v) => setMessageType(v as any)}
+              >
                 <TabsList className="w-full">
                   <TabsTrigger value="template" className="flex-1">
                     Template
@@ -639,12 +717,17 @@ export default function Broadcast() {
                 <TabsContent value="template" className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label>Select Template</Label>
-                    <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                    <Select
+                      value={selectedTemplateId}
+                      onValueChange={handleTemplateSelect}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a template..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="hello_world">hello_world (Default)</SelectItem>
+                        <SelectItem value="hello_world">
+                          hello_world (Default)
+                        </SelectItem>
                         {approvedTemplates.map((template) => (
                           <SelectItem key={template.id} value={template.id}>
                             {template.name}
@@ -659,10 +742,7 @@ export default function Broadcast() {
                         <Smartphone className="h-4 w-4" />
                         Preview: {selectedTemplateName}
                       </div>
-                      <PhonePreview
-                        body={message}
-                        className="py-2"
-                      />
+                      <PhonePreview body={message} className="py-2" />
                     </div>
                   )}
                 </TabsContent>
@@ -677,7 +757,8 @@ export default function Broadcast() {
                       onChange={(e) => setMessage(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Note: Custom messages require the recipient to have messaged you first (24-hour window rule).
+                      Note: Custom messages require the recipient to have
+                      messaged you first (24-hour window rule).
                     </p>
                   </div>
                   {message && (
@@ -686,10 +767,7 @@ export default function Broadcast() {
                         <Smartphone className="h-4 w-4" />
                         Preview
                       </div>
-                      <PhonePreview
-                        body={message}
-                        className="py-2"
-                      />
+                      <PhonePreview body={message} className="py-2" />
                     </div>
                   )}
                 </TabsContent>
@@ -697,7 +775,10 @@ export default function Broadcast() {
                 <TabsContent value="ai_agent" className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <Label>Select AI Agent</Label>
-                    <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                    <Select
+                      value={selectedAgentId}
+                      onValueChange={setSelectedAgentId}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select an AI agent..." />
                       </SelectTrigger>
@@ -717,8 +798,8 @@ export default function Broadcast() {
                     </Select>
                     {selectedAgentId && (
                       <p className="text-sm text-muted-foreground">
-                        The AI agent will generate personalized messages for each recipient using the hello_world
-                        template.
+                        The AI agent will generate personalized messages for
+                        each recipient using the hello_world template.
                       </p>
                     )}
                   </div>
@@ -729,7 +810,9 @@ export default function Broadcast() {
                 <Checkbox
                   id="schedule"
                   checked={isScheduled}
-                  onCheckedChange={(checked) => setIsScheduled(checked === true)}
+                  onCheckedChange={(checked) =>
+                    setIsScheduled(checked === true)
+                  }
                 />
                 <Label htmlFor="schedule" className="cursor-pointer">
                   Schedule for later
@@ -746,15 +829,17 @@ export default function Broadcast() {
                     min={new Date().toISOString().slice(0, 16)}
                   />
                   {scheduledTime && new Date(scheduledTime) <= new Date() && (
-                    <p className="text-xs text-red-500">Time must be in the future</p>
+                    <p className="text-xs text-red-500">
+                      Time must be in the future
+                    </p>
                   )}
                 </div>
               )}
 
-              <Button 
-                className="w-full" 
-                type="button" 
-                onClick={handleSendBroadcast} 
+              <Button
+                className="w-full"
+                type="button"
+                onClick={handleSendBroadcast}
                 disabled={isSending || !campaignName.trim()}
               >
                 {isSending ? (
@@ -767,8 +852,8 @@ export default function Broadcast() {
                 {isSending
                   ? "Processing..."
                   : isScheduled
-                    ? "Schedule Broadcast"
-                    : `Send to ${totalSelected} Contacts`}
+                  ? "Schedule Broadcast"
+                  : `Send to ${totalSelected} Contacts`}
               </Button>
               {!campaignName.trim() && (
                 <p className="text-xs text-red-500 text-center">

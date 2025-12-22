@@ -26,7 +26,7 @@ export async function getUserWhatsAppCredentials(userId: string): Promise<WhatsA
   try {
     const integrationCreds = await integrationService.getDecryptedCredentials(userId, 'whatsapp');
     if (integrationCreds?.accessToken && integrationCreds?.phoneNumberId) {
-      console.log('[WhatsApp Service] Using credentials from Connected Apps');
+      //console.log('[WhatsApp Service] Using credentials from Connected Apps');
       return {
         token: integrationCreds.accessToken,
         phoneNumberId: integrationCreds.phoneNumberId,
@@ -64,7 +64,7 @@ export async function getWhatsAppCredentialsForUser(userId?: string): Promise<Wh
   const systemPhoneNumberId = process.env.PHONE_NUMBER_ID;
   
   if (systemToken && systemPhoneNumberId) {
-    console.log('[WhatsApp Service] Using system credentials from environment');
+    //console.log('[WhatsApp Service] Using system credentials from environment');
     return {
       token: systemToken,
       phoneNumberId: systemPhoneNumberId,
@@ -153,7 +153,7 @@ export async function sendTemplateMessage(
   }
   
   const metaTemplateName = templateName.toLowerCase().replace(/\s+/g, '_');
-  console.log(`[WhatsApp Service] Sending template: "${metaTemplateName}" to ${to}`);
+  //console.log(`[WhatsApp Service] Sending template: "${metaTemplateName}" to ${to}`);
   
   const languageCodesToTry = [languageCode, 'en', 'en_US', 'en_GB'];
   const uniqueLanguages = Array.from(new Set(languageCodesToTry));
@@ -190,7 +190,7 @@ export async function sendTemplateMessage(
       const data = await response.json();
       
       if (response.ok && data.messages?.[0]?.id) {
-        console.log(`[WhatsApp Service] Template sent successfully with lang: ${langCode}`);
+        //console.log(`[WhatsApp Service] Template sent successfully with lang: ${langCode}`);
         return { success: true, messageId: data.messages[0].id };
       }
       
@@ -198,7 +198,7 @@ export async function sendTemplateMessage(
       const errorMsg = data.error?.message || '';
       
       if (errorCode === 132001 || errorMsg.includes('does not exist')) {
-        console.log(`[WhatsApp Service] Template not found with lang "${langCode}", trying next...`);
+        //console.log(`[WhatsApp Service] Template not found with lang "${langCode}", trying next...`);
         continue;
       }
       
@@ -566,7 +566,7 @@ export async function sendFlowMessage(
     const data = await response.json();
     
     if (response.ok && data.messages?.[0]?.id) {
-      console.log(`[WhatsApp Service] Flow message sent to ${options.to}, messageId: ${data.messages[0].id}`);
+      //console.log(`[WhatsApp Service] Flow message sent to ${options.to}, messageId: ${data.messages[0].id}`);
       return { success: true, messageId: data.messages[0].id };
     }
     

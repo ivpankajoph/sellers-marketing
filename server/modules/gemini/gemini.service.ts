@@ -93,7 +93,7 @@ export async function sendGeminiCompletion(
     );
     
     if (isRefusal || !responseText.trim()) {
-      console.log('[Gemini] Detected refusal or empty response, using fallback');
+      //console.log('[Gemini] Detected refusal or empty response, using fallback');
       // Return a neutral follow-up message based on the agent's purpose
       if (systemPromptContent.toLowerCase().includes('award') || systemPromptContent.toLowerCase().includes('life changer')) {
         return "Please reply if you are interested in the award, and I will share the benefits again.";

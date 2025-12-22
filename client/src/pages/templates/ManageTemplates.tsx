@@ -1,18 +1,61 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { MoreHorizontal, Edit, Trash2, Loader2, Plus, Copy, RefreshCw, Send, AlertTriangle, CheckCircle2, Info, ExternalLink } from "lucide-react";
+import {
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Loader2,
+  Plus,
+  Copy,
+  RefreshCw,
+  Send,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  ExternalLink,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface Template {
@@ -34,7 +77,9 @@ interface Template {
 export default function ManageTemplates() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
+    null
+  );
   const [formData, setFormData] = useState({
     name: "",
     category: "utility" as "marketing" | "utility" | "authentication",
@@ -52,26 +97,40 @@ export default function ManageTemplates() {
     },
   });
 
+  const userDataString = localStorage.getItem("whatsapp_auth_user");
+  if (!userDataString) {
+    alert("User not logged in");
+    return;
+  }
+
+  const userData = JSON.parse(userDataString);
+  const userId = userData.id;
   const syncMetaTemplatesMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/templates/sync-meta", {
+      const res = await fetch(`/api/templates/sync-meta?userId=${userId}`, {
         method: "POST",
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Failed to sync templates");
+        throw new Error(
+          data.error || data.message || "Failed to sync templates"
+        );
       }
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
-      const approvedList = data.approvedTemplates?.length > 0 
-        ? `Approved: ${data.approvedTemplates.join(", ")}`
-        : "No approved templates found";
-      toast.success(data.message || `Synced ${data.synced || 0} templates from Meta`, {
-        description: approvedList,
-        duration: 5000,
-      });
+      const approvedList =
+        data.approvedTemplates?.length > 0
+          ? `Approved: ${data.approvedTemplates.join(", ")}`
+          : "No approved templates found";
+      toast.success(
+        data.message || `Synced ${data.synced || 0} templates from Meta`,
+        {
+          description: approvedList,
+          duration: 5000,
+        }
+      );
     },
     onError: (error: Error) => {
       toast.error("Failed to sync META templates", {
@@ -112,16 +171,23 @@ export default function ManageTemplates() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Failed to submit for approval");
+        throw new Error(
+          data.error || data.message || "Failed to submit for approval"
+        );
       }
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
-      toast.success(data.message || "Template submitted to Meta for approval!", {
-        description: data.metaTemplateName ? `Template name in Meta: ${data.metaTemplateName}` : undefined,
-        duration: 5000,
-      });
+      toast.success(
+        data.message || "Template submitted to Meta for approval!",
+        {
+          description: data.metaTemplateName
+            ? `Template name in Meta: ${data.metaTemplateName}`
+            : undefined,
+          duration: 5000,
+        }
+      );
     },
     onError: (error: Error) => {
       toast.error("Failed to submit template", {
@@ -186,7 +252,10 @@ export default function ManageTemplates() {
       name: formData.name,
       category: formData.category,
       content: formData.content,
-      variables: formData.variables.split(",").map(v => v.trim()).filter(Boolean),
+      variables: formData.variables
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
     });
   };
 
@@ -198,7 +267,10 @@ export default function ManageTemplates() {
         name: formData.name,
         category: formData.category,
         content: formData.content,
-        variables: formData.variables.split(",").map(v => v.trim()).filter(Boolean),
+        variables: formData.variables
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean),
         status: "pending",
       },
     });
@@ -211,10 +283,14 @@ export default function ManageTemplates() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "approved": return "default";
-      case "pending": return "secondary";
-      case "rejected": return "destructive";
-      default: return "secondary";
+      case "approved":
+        return "default";
+      case "pending":
+        return "secondary";
+      case "rejected":
+        return "destructive";
+      default:
+        return "secondary";
     }
   };
 
@@ -231,12 +307,16 @@ export default function ManageTemplates() {
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Manage Templates</h2>
-            <p className="text-muted-foreground">Create and manage your WhatsApp message templates.</p>
+            <h2 className="text-3xl font-bold tracking-tight">
+              Manage Templates
+            </h2>
+            <p className="text-muted-foreground">
+              Create and manage your WhatsApp message templates.
+            </p>
           </div>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => syncMetaTemplatesMutation.mutate()}
               disabled={syncMetaTemplatesMutation.isPending}
             >
@@ -247,7 +327,12 @@ export default function ManageTemplates() {
               )}
               Sync META Templates
             </Button>
-            <Button onClick={() => { resetForm(); setIsAddDialogOpen(true); }}>
+            <Button
+              onClick={() => {
+                resetForm();
+                setIsAddDialogOpen(true);
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Create Template
             </Button>
@@ -294,11 +379,12 @@ export default function ManageTemplates() {
               <Info className="h-4 w-4" />
               <AlertTitle>Approval Process</AlertTitle>
               <AlertDescription>
-                Templates must be approved by Meta before use. Marketing templates may take 24-48 hours. 
-                Utility and authentication templates are usually approved faster.
-                <a 
-                  href="https://developers.facebook.com/docs/whatsapp/message-templates/guidelines" 
-                  target="_blank" 
+                Templates must be approved by Meta before use. Marketing
+                templates may take 24-48 hours. Utility and authentication
+                templates are usually approved faster.
+                <a
+                  href="https://developers.facebook.com/docs/whatsapp/message-templates/guidelines"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 ml-2 text-blue-600 hover:underline"
                 >
@@ -313,8 +399,9 @@ export default function ManageTemplates() {
           <CardHeader>
             <CardTitle>All Templates</CardTitle>
             <CardDescription>
-              {templates.length} template{templates.length !== 1 ? 's' : ''} in your library. 
-              Note that editing an approved template will require re-approval.
+              {templates.length} template{templates.length !== 1 ? "s" : ""} in
+              your library. Note that editing an approved template will require
+              re-approval.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -324,7 +411,8 @@ export default function ManageTemplates() {
               </div>
             ) : templates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No templates yet. Create your first template or sync from Meta to get started.
+                No templates yet. Create your first template or sync from Meta
+                to get started.
               </div>
             ) : (
               <Table>
@@ -342,22 +430,35 @@ export default function ManageTemplates() {
                 <TableBody>
                   {templates.map((template) => (
                     <TableRow key={template.id}>
-                      <TableCell className="font-medium">{template.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {template.name}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
                           {template.category}
                         </Badge>
                       </TableCell>
-                      <TableCell>{template.language || 'en'}</TableCell>
+                      <TableCell>{template.language || "en"}</TableCell>
                       <TableCell>
-                        <Badge variant={getStatusColor(template.metaStatus?.toLowerCase() || template.status)} className="capitalize">
-                          {template.metaStatus?.toLowerCase() || template.status}
+                        <Badge
+                          variant={getStatusColor(
+                            template.metaStatus?.toLowerCase() ||
+                              template.status
+                          )}
+                          className="capitalize"
+                        >
+                          {template.metaStatus?.toLowerCase() ||
+                            template.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {template.variables.slice(0, 3).map((v) => (
-                            <Badge key={v} variant="secondary" className="text-xs">
+                            <Badge
+                              key={v}
+                              variant="secondary"
+                              className="text-xs"
+                            >
                               {`{{${v}}}`}
                             </Badge>
                           ))}
@@ -373,17 +474,21 @@ export default function ManageTemplates() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {(template.metaStatus?.toLowerCase() || template.status) === "pending" && !template.metaTemplateId && (
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => submitForApprovalMutation.mutate(template.id)}
-                              disabled={submitForApprovalMutation.isPending}
-                            >
-                              <Send className="mr-1 h-3 w-3" />
-                              Submit
-                            </Button>
-                          )}
+                          {(template.metaStatus?.toLowerCase() ||
+                            template.status) === "pending" &&
+                            !template.metaTemplateId && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  submitForApprovalMutation.mutate(template.id)
+                                }
+                                disabled={submitForApprovalMutation.isPending}
+                              >
+                                <Send className="mr-1 h-3 w-3" />
+                                Submit
+                              </Button>
+                            )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -391,17 +496,25 @@ export default function ManageTemplates() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => copyToClipboard(template.content)}>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  copyToClipboard(template.content)
+                                }
+                              >
                                 <Copy className="mr-2 h-4 w-4" />
                                 Copy Content
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openEditDialog(template)}>
+                              <DropdownMenuItem
+                                onClick={() => openEditDialog(template)}
+                              >
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 className="text-destructive"
-                                onClick={() => deleteMutation.mutate(template.id)}
+                                onClick={() =>
+                                  deleteMutation.mutate(template.id)
+                                }
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
@@ -428,7 +541,8 @@ export default function ManageTemplates() {
             <Alert className="bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20">
               <AlertTriangle className="h-4 w-4 text-yellow-600" />
               <AlertDescription className="text-sm">
-                This template will be submitted to Meta for approval. Approval may take up to 24-48 hours for marketing templates.
+                This template will be submitted to Meta for approval. Approval
+                may take up to 24-48 hours for marketing templates.
               </AlertDescription>
             </Alert>
             <div className="grid grid-cols-2 gap-4">
@@ -437,20 +551,38 @@ export default function ManageTemplates() {
                 <Input
                   placeholder="welcome_message"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      name: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                    })
+                  }
                 />
-                <p className="text-xs text-muted-foreground">Use lowercase with underscores (no spaces)</p>
+                <p className="text-xs text-muted-foreground">
+                  Use lowercase with underscores (no spaces)
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Category *</Label>
-                <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v as any })}>
+                <Select
+                  value={formData.category}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, category: v as any })
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="marketing">Marketing (Promotional)</SelectItem>
-                    <SelectItem value="utility">Utility (Transactional)</SelectItem>
-                    <SelectItem value="authentication">Authentication (OTP)</SelectItem>
+                    <SelectItem value="marketing">
+                      Marketing (Promotional)
+                    </SelectItem>
+                    <SelectItem value="utility">
+                      Utility (Transactional)
+                    </SelectItem>
+                    <SelectItem value="authentication">
+                      Authentication (OTP)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -460,11 +592,14 @@ export default function ManageTemplates() {
               <Textarea
                 placeholder="Hello {{name}}, welcome to our service!"
                 value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, content: e.target.value })
+                }
                 rows={5}
               />
               <p className="text-xs text-muted-foreground">
-                Use {"{{variable}}"} syntax for dynamic content. Max 1024 characters.
+                Use {"{{variable}}"} syntax for dynamic content. Max 1024
+                characters.
               </p>
             </div>
             <div className="space-y-2">
@@ -472,14 +607,25 @@ export default function ManageTemplates() {
               <Input
                 placeholder="name, order_id, delivery_date"
                 value={formData.variables}
-                onChange={(e) => setFormData({ ...formData, variables: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, variables: e.target.value })
+                }
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending || !formData.name || !formData.content}>
-              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={
+                createMutation.isPending || !formData.name || !formData.content
+              }
+            >
+              {createMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Create & Submit for Approval
             </Button>
           </DialogFooter>
@@ -496,7 +642,8 @@ export default function ManageTemplates() {
               <Alert className="bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20">
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
                 <AlertDescription className="text-sm">
-                  Editing this approved template will require re-approval from Meta.
+                  Editing this approved template will require re-approval from
+                  Meta.
                 </AlertDescription>
               </Alert>
             )}
@@ -505,19 +652,31 @@ export default function ManageTemplates() {
                 <Label>Template Name</Label>
                 <Input
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      name: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                    })
+                  }
                 />
               </div>
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v as any })}>
+                <Select
+                  value={formData.category}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, category: v as any })
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="marketing">Marketing</SelectItem>
                     <SelectItem value="utility">Utility</SelectItem>
-                    <SelectItem value="authentication">Authentication</SelectItem>
+                    <SelectItem value="authentication">
+                      Authentication
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -526,7 +685,9 @@ export default function ManageTemplates() {
               <Label>Message Content</Label>
               <Textarea
                 value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, content: e.target.value })
+                }
                 rows={5}
               />
             </div>
@@ -534,14 +695,28 @@ export default function ManageTemplates() {
               <Label>Variables (comma-separated)</Label>
               <Input
                 value={formData.variables}
-                onChange={(e) => setFormData({ ...formData, variables: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, variables: e.target.value })
+                }
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdate} disabled={updateMutation.isPending || !formData.name || !formData.content}>
-              {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdate}
+              disabled={
+                updateMutation.isPending || !formData.name || !formData.content
+              }
+            >
+              {updateMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Save & Resubmit
             </Button>
           </DialogFooter>

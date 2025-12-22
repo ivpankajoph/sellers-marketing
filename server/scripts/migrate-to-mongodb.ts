@@ -18,10 +18,10 @@ interface StorageData {
 }
 
 async function migrate() {
-  console.log('[Migration] Starting migration from storage.json to MongoDB...');
+  //console.log('[Migration] Starting migration from storage.json to MongoDB...');
   
   if (!fs.existsSync(DATA_FILE)) {
-    console.log('[Migration] No storage.json file found. Nothing to migrate.');
+    //console.log('[Migration] No storage.json file found. Nothing to migrate.');
     return;
   }
 
@@ -29,42 +29,42 @@ async function migrate() {
     const rawData = fs.readFileSync(DATA_FILE, 'utf-8');
     const data: StorageData = JSON.parse(rawData);
     
-    console.log('[Migration] Found data to migrate:');
-    console.log(`  - Users: ${data.users?.length || 0}`);
-    console.log(`  - Contacts: ${data.contacts?.length || 0}`);
-    console.log(`  - Messages: ${data.messages?.length || 0}`);
-    console.log(`  - Campaigns: ${data.campaigns?.length || 0}`);
-    console.log(`  - Templates: ${data.templates?.length || 0}`);
-    console.log(`  - Automations: ${data.automations?.length || 0}`);
-    console.log(`  - Team Members: ${data.teamMembers?.length || 0}`);
-    console.log(`  - Chats: ${data.chats?.length || 0}`);
+    //console.log('[Migration] Found data to migrate:');
+    //console.log(`  - Users: ${data.users?.length || 0}`);
+    //console.log(`  - Contacts: ${data.contacts?.length || 0}`);
+    //console.log(`  - Messages: ${data.messages?.length || 0}`);
+    //console.log(`  - Campaigns: ${data.campaigns?.length || 0}`);
+    //console.log(`  - Templates: ${data.templates?.length || 0}`);
+    //console.log(`  - Automations: ${data.automations?.length || 0}`);
+    //console.log(`  - Team Members: ${data.teamMembers?.length || 0}`);
+    //console.log(`  - Chats: ${data.chats?.length || 0}`);
     
     await mongodb.connectToMongoDB();
     
     if (data.users?.length > 0) {
-      console.log('[Migration] Migrating users...');
+      //console.log('[Migration] Migrating users...');
       const existingUsers = await mongodb.findMany<any>('users', {});
       const existingIds = new Set(existingUsers.map((u: any) => u.id));
       const newUsers = data.users.filter(u => !existingIds.has(u.id));
       if (newUsers.length > 0) {
         await mongodb.insertMany('users', newUsers);
       }
-      console.log(`[Migration] Users migrated: ${newUsers.length} new, ${data.users.length - newUsers.length} existing`);
+      //console.log(`[Migration] Users migrated: ${newUsers.length} new, ${data.users.length - newUsers.length} existing`);
     }
 
     if (data.contacts?.length > 0) {
-      console.log('[Migration] Migrating contacts...');
+      //console.log('[Migration] Migrating contacts...');
       const existingContacts = await mongodb.findMany<any>('contacts', {});
       const existingIds = new Set(existingContacts.map((c: any) => c.id));
       const newContacts = data.contacts.filter(c => !existingIds.has(c.id));
       if (newContacts.length > 0) {
         await mongodb.insertMany('contacts', newContacts);
       }
-      console.log(`[Migration] Contacts migrated: ${newContacts.length} new, ${data.contacts.length - newContacts.length} existing`);
+      //console.log(`[Migration] Contacts migrated: ${newContacts.length} new, ${data.contacts.length - newContacts.length} existing`);
     }
 
     if (data.messages?.length > 0) {
-      console.log('[Migration] Migrating messages...');
+      //console.log('[Migration] Migrating messages...');
       const existingMessages = await mongodb.findMany<any>('messages', {});
       const existingIds = new Set(existingMessages.map((m: any) => m.id));
       const newMessages = data.messages.filter(m => !existingIds.has(m.id));
@@ -73,79 +73,79 @@ async function migrate() {
         for (let i = 0; i < newMessages.length; i += batchSize) {
           const batch = newMessages.slice(i, i + batchSize);
           await mongodb.insertMany('messages', batch);
-          console.log(`[Migration] Messages batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(newMessages.length/batchSize)} migrated`);
+          //console.log(`[Migration] Messages batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(newMessages.length/batchSize)} migrated`);
         }
       }
-      console.log(`[Migration] Messages migrated: ${newMessages.length} new, ${data.messages.length - newMessages.length} existing`);
+      //console.log(`[Migration] Messages migrated: ${newMessages.length} new, ${data.messages.length - newMessages.length} existing`);
     }
 
     if (data.campaigns?.length > 0) {
-      console.log('[Migration] Migrating campaigns...');
+      //console.log('[Migration] Migrating campaigns...');
       const existingCampaigns = await mongodb.findMany<any>('campaigns', {});
       const existingIds = new Set(existingCampaigns.map((c: any) => c.id));
       const newCampaigns = data.campaigns.filter(c => !existingIds.has(c.id));
       if (newCampaigns.length > 0) {
         await mongodb.insertMany('campaigns', newCampaigns);
       }
-      console.log(`[Migration] Campaigns migrated: ${newCampaigns.length} new`);
+      //console.log(`[Migration] Campaigns migrated: ${newCampaigns.length} new`);
     }
 
     if (data.templates?.length > 0) {
-      console.log('[Migration] Migrating templates...');
+      //console.log('[Migration] Migrating templates...');
       const existingTemplates = await mongodb.findMany<any>('templates', {});
       const existingIds = new Set(existingTemplates.map((t: any) => t.id));
       const newTemplates = data.templates.filter(t => !existingIds.has(t.id));
       if (newTemplates.length > 0) {
         await mongodb.insertMany('templates', newTemplates);
       }
-      console.log(`[Migration] Templates migrated: ${newTemplates.length} new`);
+      //console.log(`[Migration] Templates migrated: ${newTemplates.length} new`);
     }
 
     if (data.automations?.length > 0) {
-      console.log('[Migration] Migrating automations...');
+      //console.log('[Migration] Migrating automations...');
       const existingAutomations = await mongodb.findMany<any>('automations', {});
       const existingIds = new Set(existingAutomations.map((a: any) => a.id));
       const newAutomations = data.automations.filter(a => !existingIds.has(a.id));
       if (newAutomations.length > 0) {
         await mongodb.insertMany('automations', newAutomations);
       }
-      console.log(`[Migration] Automations migrated: ${newAutomations.length} new`);
+      //console.log(`[Migration] Automations migrated: ${newAutomations.length} new`);
     }
 
     if (data.teamMembers?.length > 0) {
-      console.log('[Migration] Migrating team members...');
+      //console.log('[Migration] Migrating team members...');
       const existingMembers = await mongodb.findMany<any>('team_members', {});
       const existingIds = new Set(existingMembers.map((m: any) => m.id));
       const newMembers = data.teamMembers.filter(m => !existingIds.has(m.id));
       if (newMembers.length > 0) {
         await mongodb.insertMany('team_members', newMembers);
       }
-      console.log(`[Migration] Team members migrated: ${newMembers.length} new`);
+      //console.log(`[Migration] Team members migrated: ${newMembers.length} new`);
     }
 
     if (data.whatsappSettings) {
-      console.log('[Migration] Migrating WhatsApp settings...');
+      //console.log('[Migration] Migrating WhatsApp settings...');
       const existing = await mongodb.findOne('whatsapp_settings', { id: data.whatsappSettings.id });
       if (!existing) {
         await mongodb.insertOne('whatsapp_settings', data.whatsappSettings);
-        console.log('[Migration] WhatsApp settings migrated');
+        //console.log('[Migration] WhatsApp settings migrated');
       } else {
-        console.log('[Migration] WhatsApp settings already exist');
+        //console.log('[Migration] WhatsApp settings already exist');
       }
     }
 
     if (data.billing) {
-      console.log('[Migration] Migrating billing...');
+      //console.log('[Migration] Migrating billing...');
       const existing = await mongodb.findOne('billing', { id: data.billing.id });
       if (!existing) {
         await mongodb.insertOne('billing', data.billing);
-        console.log('[Migration] Billing migrated');
+        //console.log('[Migration] Billing migrated');
       } else {
-        console.log('[Migration] Billing already exists');
+        //console.log('[Migration] Billing already exists');
       }
     }
 
-    console.log('[Migration] Creating chats from contacts and messages...');
+    //console.log('[Migration] Creating chats from contacts and messages...');
     const contacts = await mongodb.findMany<any>('contacts', {});
     const messages = await mongodb.findMany<any>('messages', {});
     const existingChats = await mongodb.findMany<any>('chats', {});
@@ -176,10 +176,10 @@ async function migrate() {
     if (newChats.length > 0) {
       await mongodb.insertMany('chats', newChats);
     }
-    console.log(`[Migration] Chats created: ${newChats.length} new, ${existingChats.length} existing`);
+    //console.log(`[Migration] Chats created: ${newChats.length} new, ${existingChats.length} existing`);
 
-    console.log('[Migration] Migration completed successfully!');
-    console.log('[Migration] You can now safely delete storage.json if everything works correctly.');
+    //console.log('[Migration] Migration completed successfully!');
+    //console.log('[Migration] You can now safely delete storage.json if everything works correctly.');
     
     process.exit(0);
   } catch (error) {

@@ -1,173 +1,146 @@
-import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { RefreshCw, FileText, Users, ExternalLink } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useEffect } from "react";
 
-interface LeadForm {
+interface LeadgenForm {
   id: string;
-  fbFormId: string;
   name: string;
-  status: string;
-  pageId: string;
-  createdTime: string;
-  syncedAt: string;
+  locale: string;
+  status: "ACTIVE" | "ARCHIVED";
 }
 
-export default function LeadForms() {
-  const [forms, setForms] = useState<LeadForm[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const { toast } = useToast();
-
-  const fetchForms = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/facebook/forms");
-      if (response.ok) {
-        const data = await response.json();
-        setForms(data);
-      }
-    } catch (error) {
-      console.error("Error fetching forms:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const syncForms = async () => {
-    setSyncing(true);
-    try {
-      const response = await fetch("/api/facebook/forms/sync", { method: "POST" });
-      if (response.ok) {
-        const data = await response.json();
-        setForms(data.forms);
-        toast({
-          title: "Forms Synced",
-          description: `Successfully synced ${data.count} lead form(s) from Facebook.`,
-        });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Sync Failed",
-          description: error.error || "Failed to sync forms from Facebook.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Sync Failed",
-        description: "Network error while syncing forms.",
-        variant: "destructive",
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const syncLeads = async (formId: string) => {
-    try {
-      const response = await fetch(`/api/facebook/forms/${formId}/sync-leads`, { method: "POST" });
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: "Leads Synced",
-          description: `Successfully synced ${data.count} new lead(s).`,
-        });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Sync Failed",
-          description: error.error || "Failed to sync leads.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Sync Failed",
-        description: "Network error while syncing leads.",
-        variant: "destructive",
-      });
-    }
-  };
+const LeadgenFormsViewer: React.FC = () => {
+  const [forms, setForms] = React.useState<LeadgenForm[]>([]);
+  const [loading, setLoading] = React.useState<boolean>(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   useEffect(() => {
+    const fetchForms = async () => {
+      try {
+        // Validate user login
+        const userDataString = localStorage.getItem("whatsapp_auth_user");
+        if (!userDataString) {
+          setError("User not logged in");
+          setLoading(false);
+          return;
+        }
+
+        const userData = JSON.parse(userDataString);
+        const userId = userData.id;
+        
+        const pageIdRes = await fetch(
+          `/api/integrations/key?key=FB_PAGE_ID&userId=${userId}`
+        );
+
+        if (!pageIdRes.ok) throw new Error("Failed to fetch FB_PAGE_ID");
+        const { value: FB_PAGE_ID } = await pageIdRes.json();
+
+        
+        const tokenRes = await fetch(
+          `/api/integrations/key?key=FB_PAGE_ACCESS_TOKEN&userId=${userId}`
+        );
+
+
+        if (!tokenRes.ok)
+          throw new Error("Failed to fetch FB_PAGE_ACCESS_TOKEN");
+        const { value: FB_PAGE_ACCESS_TOKEN } = await tokenRes.json();
+
+
+        const response = await fetch(
+          `https://graph.facebook.com/v18.0/${FB_PAGE_ID}/leadgen_forms?access_token=${FB_PAGE_ACCESS_TOKEN}`
+        );
+
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+
+        const data = await response.json();
+
+
+        setForms(data.data || []);
+
+
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "An unknown error occurred"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchForms();
-  }, []);
+  }, []); // Only run once on mount
+
+  const getStatusColor = (status: string) => {
+    return status === "ACTIVE"
+      ? "bg-green-100 text-green-800"
+      : "bg-gray-100 text-gray-800";
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <div className="text-gray-600">Loading forms...</div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 text-center">
+          <div className="text-red-600 font-medium">Error loading forms</div>
+          <div className="text-sm text-gray-500 mt-1">{error}</div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">Facebook Lead Forms</h2>
-            <p className="text-muted-foreground">Manage and sync your Facebook lead generation forms</p>
-          </div>
-          <Button onClick={syncForms} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing..." : "Sync Forms"}
-          </Button>
-        </div>
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+        <h1 className="text-2xl font-semibold text-gray-800 mb-6">
+          Leadgen Forms
+        </h1>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Lead Forms
-            </CardTitle>
-            <CardDescription>
-              Your connected Facebook lead forms. Click "Sync Leads" to fetch new submissions.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+        {forms.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">No forms found.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {forms.map((form) => (
+              <div
+                key={form.id}
+                className="border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow bg-white"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <h2 className="font-medium text-gray-900 text-sm line-clamp-2">
+                    {form.name}
+                  </h2>
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                      form.status
+                    )}`}
+                  >
+                    {form.status.charAt(0).toUpperCase() + form.status.slice(1)}
+                  </span>
+                </div>
+
+                <div className="flex items-center text-xs text-gray-500 mt-2 space-x-3">
+                  <span>Locale: {form.locale}</span>
+                  <span>•</span>
+                  <span>ID: {form.id.substring(0, 8)}...</span>
+                </div>
               </div>
-            ) : forms.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No lead forms found. Click "Sync Forms" to fetch from Facebook.</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Form Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Facebook ID</TableHead>
-                    <TableHead>Last Synced</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {forms.map((form) => (
-                    <TableRow key={form.id}>
-                      <TableCell className="font-medium">{form.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={form.status === "ACTIVE" ? "default" : "secondary"}>
-                          {form.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{form.fbFormId}</TableCell>
-                      <TableCell>{new Date(form.syncedAt).toLocaleString()}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => syncLeads(form.id)}>
-                          <Users className="h-4 w-4 mr-1" />
-                          Sync Leads
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+            ))}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
-}
+};
+
+export default LeadgenFormsViewer;

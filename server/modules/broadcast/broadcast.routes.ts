@@ -252,6 +252,7 @@ router.post('/send', async (req: Request, res: Response) => {
       customMessage,
       agentId,
       campaignName,
+      senderId,
       isScheduled = false,
       scheduledTime
     } = req.body;
@@ -284,6 +285,7 @@ router.post('/send', async (req: Request, res: Response) => {
       agentId,
       campaignName,
       isScheduled,
+      senderId,
       scheduledTime,
     });
 
