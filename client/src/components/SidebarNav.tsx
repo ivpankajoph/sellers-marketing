@@ -1,6 +1,6 @@
 // src/components/layout/SidebarNav.tsx
 import { useState, useEffect, useRef } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -29,10 +29,19 @@ import {
   ArrowRight,
   ArrowLeft,
 } from "lucide-react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./ui/collapsible";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 interface Chat {
   id: string;
@@ -46,12 +55,13 @@ interface NavItemProps {
 }
 
 const NavItem = ({ item, isCollapsed }: NavItemProps) => {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const isActive =
     location === item.href ||
     (item.subItems && item.subItems.some((sub: any) => location === sub.href));
   const [isOpen, setIsOpen] = useState(isActive);
   const itemRef = useRef<HTMLDivElement>(null);
+  
   const handleToggle = (open: boolean) => {
     setIsOpen(open);
     if (open && itemRef.current) {
@@ -61,17 +71,34 @@ const NavItem = ({ item, isCollapsed }: NavItemProps) => {
     }
   };
 
+  const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // Check if it's a special click (new tab, new window, etc.)
+    const isSpecialClick = e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1;
+    
+    if (!isSpecialClick) {
+      // Normal click - use client-side routing
+      e.preventDefault();
+      navigate(href);
+    }
+    // For special clicks, let the browser handle it naturally with the href
+  };
+
   if (item.subItems) {
     return (
       <div ref={itemRef}>
-        <Collapsible open={isOpen} onOpenChange={handleToggle} className="space-y-1">
+        <Collapsible
+          open={isOpen}
+          onOpenChange={handleToggle}
+          className="space-y-1"
+        >
           <CollapsibleTrigger asChild>
             <div
               className={`
                 flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer select-none
-                ${isActive
-                  ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
-                  : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                ${
+                  isActive
+                    ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
+                    : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                 }
               `}
               title={isCollapsed ? item.label : ""}
@@ -80,29 +107,32 @@ const NavItem = ({ item, isCollapsed }: NavItemProps) => {
                 <item.icon className="h-4 w-4 shrink-0" />
                 {!isCollapsed && item.label}
               </div>
-              {!isCollapsed && (isOpen ? (
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              ) : (
-                <ChevronRight className="h-3 w-3 opacity-50" />
-              ))}
+              {!isCollapsed &&
+                (isOpen ? (
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 opacity-50" />
+                ))}
             </div>
           </CollapsibleTrigger>
           {!isCollapsed && (
             <CollapsibleContent className="pl-9 space-y-1 animate-in slide-in-from-top-2 duration-200">
               {item.subItems.map((sub: any) => (
-                <Link key={sub.href} href={sub.href}>
-                  <div
-                    className={`
-                      block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
-                      ${location === sub.href
+                <a
+                  key={sub.href}
+                  href={sub.href}
+                  onClick={(e) => handleNavigation(e, sub.href)}
+                  className={`
+                    block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
+                    ${
+                      location === sub.href
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                         : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
-                      }
-                    `}
-                  >
-                    {sub.label}
-                  </div>
-                </Link>
+                    }
+                  `}
+                >
+                  {sub.label}
+                </a>
               ))}
             </CollapsibleContent>
           )}
@@ -112,31 +142,32 @@ const NavItem = ({ item, isCollapsed }: NavItemProps) => {
   }
 
   return (
-    <Link href={item.href}>
-      <div
-        className={`
-          flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
-          ${isActive
+    <a
+      href={item.href}
+      onClick={(e) => handleNavigation(e, item.href)}
+      className={`
+        flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
+        ${
+          isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-          }
-        `}
-        title={isCollapsed ? item.label : ""}
-      >
-        <div className="flex items-center gap-3">
-          <item.icon className="h-4 w-4 shrink-0" />
-          {!isCollapsed && item.label}
-        </div>
-        {!isCollapsed && item.badge && (
-          <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-1.5 py-0.5 min-w-[20px] text-center">
-            {item.badge > 99 ? "99+" : item.badge}
-          </Badge>
-        )}
-        {isCollapsed && item.badge && (
-          <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500"></div>
-        )}
+        }
+      `}
+      title={isCollapsed ? item.label : ""}
+    >
+      <div className="flex items-center gap-3">
+        <item.icon className="h-4 w-4 shrink-0" />
+        {!isCollapsed && item.label}
       </div>
-    </Link>
+      {!isCollapsed && item.badge && (
+        <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-1.5 py-0.5 min-w-[20px] text-center">
+          {item.badge > 99 ? "99+" : item.badge}
+        </Badge>
+      )}
+      {isCollapsed && item.badge && (
+        <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500"></div>
+      )}
+    </a>
   );
 };
 
@@ -145,19 +176,48 @@ interface SidebarNavProps {
   onLogout: () => void;
 }
 
+interface SidebarUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
 export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
+  const AUTH_USER_KEY = "whatsapp_auth_user";
+
   const [location] = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { user } = useAuth();
 
-  // Static user data for testing
-  const staticUsers = [
-    { id: 'user1', name: 'Sparsh Bagga', email: 'sbagga@gmail.com', role: 'admin' },
-    { id: 'user2', name: 'Pankaj Verma', email: 'imvpankaj@gmail.com', role: 'manager' },
-    { id: 'user3', name: 'Samarth Punia', email: 'smarth@gmail.com', role: 'agent' },
-  ];
+  const { data: users = [], isLoading } = useQuery<SidebarUser[]>({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users/all");
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
+  });
 
-  const [selectedUser, setSelectedUser] = useState(staticUsers[0]);
+  const updateAuthUserInStorage = (user: any) => {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  };
+
+  const getInitialUser = () => {
+    try {
+      const raw = localStorage.getItem("whatsapp_auth_user");
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  };
+
+  const [selectedUser, setSelectedUser] = useState<any>(getInitialUser());
+  useEffect(() => {
+    if (!selectedUser && users.length > 0) {
+      setSelectedUser(users[0]);
+      updateAuthUserInStorage(users[0]);
+    }
+  }, [users]);
 
   const { data: windowUnreadCount = 0 } = useQuery<number>({
     queryKey: ["/api/chats", "window-unread-count"],
@@ -171,7 +231,8 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         if (chat.unreadCount <= 0) continue;
         if (chat.lastInboundMessageTime) {
           const lastInbound = new Date(chat.lastInboundMessageTime);
-          const hoursDiff = (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
+          const hoursDiff =
+            (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
           if (hoursDiff <= 24) {
             totalUnread += chat.unreadCount;
           }
@@ -183,7 +244,12 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
   });
 
   const navStructure = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/", pageId: "dashboard" },
+    {
+      icon: LayoutDashboard,
+      label: "Dashboard",
+      href: "/",
+      pageId: "dashboard",
+    },
     {
       icon: Clock,
       label: "24-Hour Window",
@@ -213,10 +279,15 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         { label: "Drip Campaigns", href: "/automation/campaigns" },
         { label: "Analytics", href: "/automation/analytics" },
         { label: "Interest Lists", href: "/automation/interest" },
-        { label: "Follow-up", href: "/automation/follow-up" },
+        // { label: "Follow-up", href: "/automation/follow-up" },
       ],
     },
-    { icon: LayoutGrid, label: "Connect Apps", href: "/apps/connect", pageId: "flow-builder" },
+    {
+      icon: LayoutGrid,
+      label: "Connect Apps",
+      href: "/apps/connect",
+      pageId: "flow-builder",
+    },
     {
       icon: FileText,
       label: "Templates",
@@ -267,7 +338,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       pageId: "reports-campaign",
       subItems: [
         { label: "Broadcast Report", href: "/reports/broadcast" },
-        { label: "Campaign Perf.", href: "/reports/campaign" },
+        // { label: "Campaign Perf.", href: "/reports/campaign" },
         { label: "Agent Perf.", href: "/reports/agents" },
         { label: "Contact Analytics", href: "/reports/contacts" },
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
@@ -277,7 +348,13 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       ],
     },
     { icon: Users, label: "Contacts", href: "/contacts", pageId: "contacts" },
-    { icon: UserCog, label: "User Management", href: "/user-management", pageId: "user-management", adminOnly: true },
+    {
+      icon: UserCog,
+      label: "User Management",
+      href: "/user-management",
+      pageId: "user-management",
+      adminOnly: true,
+    },
     {
       icon: Settings,
       label: "Settings",
@@ -303,15 +380,23 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
   const NavContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+      <div
+        className={`p-6 flex items-center ${
+          isCollapsed ? "justify-center" : "gap-3"
+        }`}
+      >
         {!isCollapsed ? (
           <>
             <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
               <MessageSquare className="h-6 w-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-heading font-bold text-lg leading-none tracking-tight">WhatsApp</h1>
-              <span className="text-xs text-sidebar-foreground/60">Business API</span>
+              <h1 className="font-heading font-bold text-lg leading-none tracking-tight">
+                WhatsApp
+              </h1>
+              <span className="text-xs text-sidebar-foreground/60">
+                Business API
+              </span>
             </div>
           </>
         ) : (
@@ -321,37 +406,55 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         )}
       </div>
 
-      {/* User Dropdown */}
-      <div className={`px-4 pb-4 ${isCollapsed ? 'flex justify-center' : ''}`}>
+      <div className={`px-4 pb-4 ${isCollapsed ? "flex justify-center" : ""}`}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className={`w-full flex items-center border border-black justify-between ${isCollapsed ? 'px-2' : ''}`}
+              className={`w-full flex items-center border border-black justify-between ${
+                isCollapsed ? "px-2" : ""
+              }`}
             >
               {!isCollapsed && (
                 <>
                   <User className="h-4 w-4" />
-                  <span className="truncate">{selectedUser.name}</span>
+                  <span className="truncate">
+                    {selectedUser ? selectedUser.name : "Loading..."}
+                  </span>
                 </>
               )}
               {isCollapsed && <User className="h-4 w-4" />}
               {!isCollapsed && <ChevronDown className="h-3 w-3 opacity-50" />}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 border border-black">
-            {staticUsers.map((user) => (
-              <DropdownMenuItem 
-                key={user.id} 
-                onClick={() => setSelectedUser(user)}
+          <DropdownMenuContent
+            align="start"
+            className="w-56 border border-black"
+          >
+            {isLoading && (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                Loading users...
+              </div>
+            )}
+
+            {users.map((user) => (
+              <DropdownMenuItem
+                key={user.id}
+                onClick={() => {
+                  setSelectedUser(user);
+                  updateAuthUserInStorage(user);
+                  window.location.reload();
+                }}
                 className="cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   <div>
                     <div className="font-medium">{user.name}</div>
-                    <div className="text-xs text-muted-foreground">{user.email}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {user.email}
+                    </div>
                   </div>
                 </div>
               </DropdownMenuItem>
@@ -360,28 +463,12 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         </DropdownMenu>
       </div>
 
-      {/* Collapse Button */}
-      <div className={`px-4 pb-4 ${isCollapsed ? 'flex justify-center' : ''}`}>
-        {/* <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`w-full flex items-center justify-center gap-2 ${isCollapsed ? 'px-2' : ''}`}
-          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <ChevronLeft className={`h-4 w-4 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} />
-          {!isCollapsed && <span className="text-xs">Collapse</span>}
-        </Button> */}
-      </div>
-
-      {/* Nav Items */}
       <div className="flex-1 px-3 py-1 space-y-1 overflow-y-auto">
         {filteredNavStructure.map((item, idx) => (
           <NavItem key={idx} item={item} isCollapsed={isCollapsed} />
         ))}
       </div>
 
-      {/* Logout (optional in sidebar for mobile) */}
       {isMobile && (
         <div className="p-4 border-t">
           <Button
@@ -397,5 +484,11 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
     </div>
   );
 
-  return isMobile ? <NavContent /> : <div className="h-screen"><NavContent /></div>;
+  return isMobile ? (
+    <NavContent />
+  ) : (
+    <div className="h-screen">
+      <NavContent />
+    </div>
+  );
 }

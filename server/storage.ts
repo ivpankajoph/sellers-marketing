@@ -237,12 +237,14 @@ export class MongoStorage implements IStorage {
     return template || undefined;
   }
 
-  async createTemplate(template: InsertTemplate): Promise<Template> {
+  async createTemplate(template: any): Promise<Template> {
     const now = new Date().toISOString();
+    const adminId = template.adminId || "unknown_admin";
     const newTemplate: Template = {
       ...template,
       id: randomUUID(),
       status: "pending",
+      adminId,
       createdAt: now,
       updatedAt: now,
     };

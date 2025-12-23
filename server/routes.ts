@@ -38,12 +38,32 @@ import * as leadManagementService from "./modules/leadManagement/leadManagement.
 import flowHandler from "./modules/facebook/fb.routes.ts";
 import { appendErrors } from "react-hook-form";
 import { getIntegrationKey } from "./helper/getIntegrationKey.ts";
+import { randomUUID } from "crypto";
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   app.get("/api/health", (req, res) => {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/users/all", async (req, res) => {
+    try {
+      const users = await mongodb.User.find(
+        {},
+        {
+          id: 1,
+          name: 1,
+          email: 1,
+          role: 1,
+        }
+      ).lean();
+
+      res.json(users);
+    } catch (error) {
+      console.error("Fetch users error:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
   });
 
   app.post("/api/integrations/save", async (req, res) => {
@@ -1386,21 +1406,177 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/templates", async (req, res) => {
-    try {
-      const parsed = insertTemplateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          message: "Invalid template data",
-          errors: parsed.error.errors,
+  async function sendTemplateToMeta(templateData: {
+  name: string;
+  category: string;
+  language: string;
+  components: any[];
+}) {
+  const { name, category, language, components } = templateData;
+
+  const WABA_ID = process.env.WABA_ID;
+  const ACCESS_TOKEN = process.env.SYSTEM_USER_TOKEN_META;
+
+  if (!WABA_ID || !ACCESS_TOKEN) {
+    throw new Error("Missing WABA_ID or WHATSAPP_ACCESS_TOKEN in environment");
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v21.0/${WABA_ID}/message_templates`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        name,
+        category: category.toUpperCase(), // "MARKETING", "UTILITY", "AUTHENTICATION"
+        language,
+        components,
+      }),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error("Meta API error:", result);
+    throw new Error(
+      result.error?.message ||
+      result.error?.error_user_msg ||
+      "Failed to submit template to WhatsApp"
+    );
+  }
+
+  return result;
+}
+
+// In your /api/templates route
+app.post("/api/templates", async (req, res) => {
+  try {
+    const parsed = insertTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid template data",
+        errors: parsed.error.errors,
+      });
+    }
+
+    const data = parsed.data as any;
+
+    // Normalize name
+    const templateName = data.name
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_")
+      .substring(0, 512);
+
+    const components: any[] = [];
+
+    // Header
+    if (data.headerType === "text" && data.headerText) {
+      components.push({
+        type: "HEADER",
+        format: "TEXT",
+        text: data.headerText,
+      });
+    }
+    // Note: Other media types require pre-uploaded media IDs (not handled here)
+
+    // Body (required)
+    components.push({
+      type: "BODY",
+      text: data.content,
+    });
+
+    // Footer (optional)
+    if (data.footer) {
+      components.push({
+        type: "FOOTER",
+        text: data.footer,
+      });
+    }
+
+    // Buttons (optional, max 3)
+    if (data.buttons && data.buttons.length > 0) {
+      const validButtons = data.buttons
+        .filter((btn: any) => btn.type && btn.text?.trim())
+        .slice(0, 3)
+        .map((btn: any) => {
+          if (btn.type === "url") {
+            return {
+              type: "URL",
+              text: btn.text.trim(),
+              url: btn.url?.trim() || "https://{{1}}",
+            };
+          } else if (btn.type === "phone_number") {
+            return {
+              type: "PHONE_NUMBER",
+              text: btn.text.trim(),
+              phone_number: btn.phone_number?.trim() || "+1234567890",
+            };
+          } else {
+            return {
+              type: "QUICK_REPLY",
+              text: btn.text.trim(),
+            };
+          }
+        });
+
+      if (validButtons.length > 0) {
+        components.push({
+          type: "BUTTONS",
+          buttons: validButtons,
         });
       }
-      const template = await storage.createTemplate(parsed.data);
-      res.status(201).json(template);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create template" });
     }
-  });
+
+    // Save to DB
+    const now = new Date().toISOString();
+    const adminId = data.adminId || "unknown_admin";
+    const newTemplate: any = {
+      id: randomUUID(),
+      ...data,
+      name: templateName,
+      status: "submitting",
+      adminId,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await storage.createTemplate(newTemplate);
+
+    // Send to Meta
+    try {
+      const metaResponse = await sendTemplateToMeta({
+        name: templateName,
+        category: data.category,
+        language: data.language || "en_US",
+        components,
+      });
+
+      await mongodb.updateOne("templates", { id: newTemplate.id }, {
+        $set: { status: "submitted", metaResponse, updatedAt: new Date().toISOString() }
+      });
+
+      return res.status(201).json({ ...newTemplate, metaResponse });
+    } catch (metaError: any) {
+      await mongodb.updateOne("templates", { id: newTemplate.id }, {
+        $set: { status: "submission_failed", error: metaError.message, updatedAt: new Date().toISOString() }
+      });
+
+      return res.status(201).json({
+        ...newTemplate,
+        submissionError: metaError.message,
+        status: "submission_failed",
+      });
+    }
+  } catch (error: any) {
+    console.error("Template creation error:", error);
+    return res.status(500).json({ message: "Failed to create template", error: error.message });
+  }
+});
+
 
   app.put("/api/templates/:id", async (req, res) => {
     try {
@@ -1535,143 +1711,152 @@ export async function registerRoutes(
   });
 
   // Sync templates from Meta Business Suite
- app.post("/api/templates/sync-meta", async (req, res) => {
-  try {
-    const { userId } = req.query;
+  app.post("/api/templates/sync-meta", async (req, res) => {
+    try {
+      const { userId } = req.query;
 
-    if (!userId) {
-      return res.status(400).json({ message: "userId is required" });
-    }
+      // Get user credentials from session
+      // const userId = (req as any).session?.user?.id;
+      let token: string | undefined;
+      let wabaId: string | undefined;
 
-    // 🔹 Fetch integration only ONCE
-    const admin = await mongodb.Integration.findOne({ userId });
-
-    if (!admin) {
-      return res.status(404).json({
-        message: "Integration not found for this user",
-      });
-    }
-
-    const token = admin.SYSTEM_USER_TOKEN_META;
-    const wabaId = admin.WABA_ID;
-
-    if (!token) {
-      return res.status(400).json({
-        message:
-          "WhatsApp access token not configured. Please configure your API credentials in Settings.",
-      });
-    }
-
-    if (!wabaId) {
-      return res.status(400).json({
-        message:
-          "WhatsApp Business Account ID (WABA_ID) not configured. Please configure it in Settings.",
-      });
-    }
-
-    // 🔹 Fetch templates from Meta
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("[TemplateSync] Meta API Error:", errorData);
-
-      return res.status(response.status).json({
-        message: "Failed to fetch templates from Meta",
-        error: errorData.error?.message || "Unknown error",
-        hint:
-          "Make sure WABA_ID is your WhatsApp Business Account ID (not Phone Number ID)",
-      });
-    }
-
-    const data = await response.json();
-    const metaTemplates = data.data || [];
-
-    const existingTemplates = await storage.getTemplates();
-
-    let synced = 0;
-    let updated = 0;
-    const approvedTemplates: string[] = [];
-
-    for (const metaTemplate of metaTemplates) {
-      if (metaTemplate.status === "APPROVED") {
-        approvedTemplates.push(
-          `${metaTemplate.name} (${metaTemplate.language})`
-        );
+      // Fallback to environment variables
+      if (!token) {
+        // console.log("user id mil rhi hai", userId);
+        const admin = await mongodb.Integration.findOne({ userId: userId });
+        if (admin) {
+          // console.log("admin mil gya", admin);
+          token = admin.SYSTEM_USER_TOKEN_META;
+        }
       }
-
-      const exists = existingTemplates.find(
-        (t) => t.name === metaTemplate.name
-      );
-
-      // 🔹 Extract content & variables
-      let content = "";
-      let variables: string[] = [];
-
-      if (metaTemplate.components) {
-        const bodyComponent = metaTemplate.components.find(
-          (c: any) => c.type === "BODY"
-        );
-
-        if (bodyComponent?.text) {
-          content = bodyComponent.text;
-          const matches = content.match(/\{\{(\d+)\}\}/g);
-
-          if (matches) {
-            variables = matches.map((_, i) => `var${i + 1}`);
-          }
+      if (!wabaId) {
+        const admin = await mongodb.Integration.findOne({ userId: userId });
+        if (admin) {
+          wabaId = admin.WABA_ID;
         }
       }
 
-      const status =
-        metaTemplate.status === "APPROVED"
-          ? "approved"
-          : metaTemplate.status === "REJECTED"
-          ? "rejected"
-          : "pending";
-
-      const now = new Date().toISOString();
-
-      // 🔹 CREATE
-      if (!exists) {
-        await storage.createTemplate({
-          name: metaTemplate.name,
-          category: (metaTemplate.category || "utility").toLowerCase(),
-          content,
-          variables,
+      if (!token) {
+        return res.status(400).json({
+          message:
+            "WhatsApp access token not configured. Please configure your API credentials in Settings.",
         });
-
-        synced++;
       }
-      // 🔹 UPDATE
-      else {
-        await storage.updateTemplate(exists.id, {
-          content: content || exists.content,
-          variables,
+
+      if (!wabaId) {
+        return res.status(400).json({
+          message:
+            "WhatsApp Business Account ID (WABA_ID) not configured. Please configure it in Settings.",
         });
-
-        updated++;
       }
+
+      //console.log(`[TemplateSync] Fetching templates from WABA ID: ${wabaId}`);
+
+      // Fetch templates from Meta Graph API with more fields
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[TemplateSync] Meta API Error:", errorData);
+        return res.status(response.status).json({
+          message: "Failed to fetch templates from Meta",
+          error: errorData.error?.message || "Unknown error",
+          hint: "Make sure WABA_ID is set to your WhatsApp Business Account ID (not Phone Number ID)",
+        });
+      }
+
+      const data = await response.json();
+      const metaTemplates = data.data || [];
+      let synced = 0;
+      let updated = 0;
+      const approvedTemplates: string[] = [];
+
+      for (const metaTemplate of metaTemplates) {
+        // Log template info
+
+        if (metaTemplate.status === "APPROVED") {
+          approvedTemplates.push(
+            `${metaTemplate.name} (${metaTemplate.language})`
+          );
+        }
+
+        // Check if template already exists
+        const existingTemplates = await storage.getTemplates();
+        const exists = existingTemplates.find(
+          (t) => t.name === metaTemplate.name
+        );
+
+        // Extract content from components
+        let content = "";
+        let variables: string[] = [];
+
+        if (metaTemplate.components) {
+          const bodyComponent = metaTemplate.components.find(
+            (c: any) => c.type === "BODY"
+          );
+          if (bodyComponent) {
+            content = bodyComponent.text || "";
+            const matches = content.match(/\{\{(\d+)\}\}/g);
+            if (matches) {
+              variables = matches.map((m: string, i: number) => `var${i + 1}`);
+            }
+          }
+        }
+
+        const status =
+          metaTemplate.status === "APPROVED"
+            ? "approved"
+            : metaTemplate.status === "REJECTED"
+            ? "rejected"
+            : "pending";
+        const now = new Date().toISOString();
+
+        if (!exists) {
+          const newTemplate = await storage.createTemplate({
+            name: metaTemplate.name,
+            category: (metaTemplate.category || "utility").toLowerCase() as any,
+            content: content,
+            adminId: userId as string,
+            variables: variables,
+          });
+          await storage.updateTemplate(newTemplate.id, {
+            status,
+            language: metaTemplate.language || "en",
+            metaTemplateId: metaTemplate.id,
+            adminId: userId as string,
+            metaStatus: metaTemplate.status,
+            lastSyncedAt: now,
+          } as any);
+          synced++;
+        } else {
+          await storage.updateTemplate(exists.id, {
+            status,
+            content: content || exists.content,
+            language: metaTemplate.language || "en",
+            metaTemplateId: metaTemplate.id,
+            adminId: userId as string,
+            metaStatus: metaTemplate.status,
+            lastSyncedAt: now,
+          } as any);
+          updated++;
+        }
+      }
+
+      res.json({
+        success: true,
+        synced,
+        updated,
+        total: metaTemplates.length,
+        approvedTemplates,
+        message: `Synced ${synced} new templates, updated ${updated} existing templates from Meta. ${approvedTemplates.length} are approved.`,
+      });
+    } catch (error) {
+      console.error("[TemplateSync] Error:", error);
+      res.status(500).json({ message: "Failed to sync templates from Meta" });
     }
-
-    res.json({
-      success: true,
-      synced,
-      updated,
-      total: metaTemplates.length,
-      approvedTemplates,
-      message: `Synced ${synced} new templates, updated ${updated} existing templates. ${approvedTemplates.length} approved.`,
-    });
-  } catch (error) {
-    console.error("[TemplateSync] Error:", error);
-    res.status(500).json({
-      message: "Failed to sync templates from Meta",
-    });
-  }
-});
-
+  });
 
   // Submit template for Meta approval
   app.post("/api/templates/:id/submit-approval", async (req, res) => {

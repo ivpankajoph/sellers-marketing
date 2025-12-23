@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,8 +12,27 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Calendar, Clock, Plus, PauseCircle, PlayCircle, Trash2, Loader2, FileSpreadsheet, Bot, MessageSquare, FileText, RefreshCw, X } from "lucide-react";
+import { Calendar, Clock, Plus, PauseCircle, PlayCircle, Trash2, Loader2, FileSpreadsheet, Bot, MessageSquare, FileText, RefreshCw, X, BarChart2, PieChart, TrendingUp, Users, CheckCircle, AlertTriangle, Info, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { toast } from "sonner";
+
+// Chart components
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+} from "recharts";
 
 interface ScheduledMessage {
   id: string;
@@ -64,6 +84,20 @@ interface ImportedContact {
   email?: string;
 }
 
+// Define statistics interface
+interface CampaignStats {
+  totalCampaigns: number;
+  totalSent: number;
+  totalDelivered: number;
+  totalFailed: number;
+  successRate: number;
+  failureRate: number;
+  averageRecipientsPerCampaign: number;
+  recentCampaigns: number;
+  scheduledCampaigns: number;
+  completedCampaigns: number;
+}
+
 export default function Schedule() {
   const [showNewSchedule, setShowNewSchedule] = useState(false);
   const [scheduleName, setScheduleName] = useState("");
@@ -75,7 +109,11 @@ export default function Schedule() {
   const [importedContacts, setImportedContacts] = useState<ImportedContact[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  
+  // State for report view
+  const [activeTab, setActiveTab] = useState<"overview" | "details" | "analytics">("overview");
 
+  // Fetch data
   const { data: schedules = [], isLoading } = useQuery<ScheduledMessage[]>({
     queryKey: ["/api/broadcast/schedules"],
     queryFn: async () => {
@@ -115,6 +153,78 @@ export default function Schedule() {
 
   const approvedTemplates = templates.filter(t => t.status === "approved");
   const activeAgents = agents.filter(a => a.isActive);
+
+  // Calculate statistics
+  const calculateStats = (): CampaignStats => {
+    const allCampaigns = [...schedules, ...scheduledBroadcasts];
+    
+    const totalCampaigns = allCampaigns.length;
+    const totalSent = allCampaigns.reduce((sum, campaign) => sum + (campaign.sentCount || 0), 0);
+    const totalFailed = allCampaigns.reduce((sum, campaign) => sum + (campaign.failedCount || 0), 0);
+    const totalDelivered = totalSent; // Assuming sent = delivered in this context
+    
+    const completedCampaigns = allCampaigns.filter(campaign => 
+      campaign.status === 'sent' || campaign.status === 'failed' || campaign.status === 'cancelled'
+    ).length;
+    
+    const scheduledCampaigns = allCampaigns.filter(campaign => 
+      campaign.status === 'scheduled' || campaign.status === 'sending'
+    ).length;
+    
+    const recentCampaigns = allCampaigns.filter(campaign => {
+      const createdAt = new Date(campaign.createdAt);
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 7; // Last 7 days
+    }).length;
+    
+    const successRate = totalCampaigns > 0 ? (totalSent / (totalSent + totalFailed)) * 100 : 0;
+    const failureRate = totalCampaigns > 0 ? (totalFailed / (totalSent + totalFailed)) * 100 : 0;
+    const averageRecipientsPerCampaign = totalCampaigns > 0 ? 
+      allCampaigns.reduce((sum, campaign) => {
+        const recipientCount = 'recipientCount' in campaign ? campaign.recipientCount : (campaign.contacts?.length || 0);
+        return sum + recipientCount;
+      }, 0) / totalCampaigns : 0;
+    
+    return {
+      totalCampaigns,
+      totalSent,
+      totalDelivered,
+      totalFailed,
+      successRate,
+      failureRate,
+      averageRecipientsPerCampaign,
+      recentCampaigns,
+      scheduledCampaigns,
+      completedCampaigns
+    };
+  };
+
+  const stats = calculateStats();
+
+  // Data for charts
+  const campaignStatusData = [
+    { name: 'Scheduled', value: stats.scheduledCampaigns, fill: '#3b82f6' },
+    { name: 'Completed', value: stats.completedCampaigns, fill: '#10b981' },
+    { name: 'Failed', value: schedules.filter(s => s.status === 'failed').length + scheduledBroadcasts.filter(b => b.status === 'failed').length, fill: '#ef4444' },
+  ];
+
+  const messageTypesData = [
+    { name: 'Template', value: [...schedules, ...scheduledBroadcasts].filter(c => c.messageType === 'template').length, fill: '#8b5cf6' },
+    { name: 'Custom', value: [...schedules, ...scheduledBroadcasts].filter(c => c.messageType === 'custom').length, fill: '#f59e0b' },
+    { name: 'AI Agent', value: [...schedules, ...scheduledBroadcasts].filter(c => c.messageType === 'ai_agent').length, fill: '#10b981' },
+  ];
+
+  const dailyStatsData = [
+    { date: 'Mon', sent: 12, failed: 2 },
+    { date: 'Tue', sent: 8, failed: 1 },
+    { date: 'Wed', sent: 15, failed: 3 },
+    { date: 'Thu', sent: 10, failed: 2 },
+    { date: 'Fri', sent: 20, failed: 4 },
+    { date: 'Sat', sent: 5, failed: 1 },
+    { date: 'Sun', sent: 7, failed: 1 },
+  ];
 
   const importExcelMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -310,7 +420,7 @@ export default function Schedule() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Schedule Messages</h2>
-            <p className="text-muted-foreground">Manage your upcoming scheduled campaigns.</p>
+            <p className="text-muted-foreground">Manage your upcoming scheduled campaigns and view performance metrics.</p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -463,6 +573,139 @@ export default function Schedule() {
           </div>
         </div>
 
+        {/* Statistics Overview */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Campaigns</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalCampaigns}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.recentCampaigns} in last 7 days
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Messages Sent</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalSent}</div>
+              <p className="text-xs text-muted-foreground">
+                Success rate: {stats.successRate.toFixed(1)}%
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Messages Failed</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalFailed}</div>
+              <p className="text-xs text-muted-foreground">
+                Failure rate: {stats.failureRate.toFixed(1)}%
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg. Recipients</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{Math.round(stats.averageRecipientsPerCampaign)}</div>
+              <p className="text-xs text-muted-foreground">
+                Per campaign
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Analytics Charts */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart2 className="h-5 w-5" />
+                Campaign Status Distribution
+              </CardTitle>
+              <CardDescription>Breakdown of campaign statuses</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <RechartsPieChart>
+                  <Pie
+                    data={campaignStatusData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {campaignStatusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-5 w-5" />
+                Message Types
+              </CardTitle>
+              <CardDescription>Distribution by message type</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={messageTypesData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="value" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Daily Performance Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AreaChart className="h-5 w-5" />
+              Weekly Performance
+            </CardTitle>
+            <CardDescription>Messages sent and failed over the past week</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={dailyStatsData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="sent" stackId="1" stroke="#10b981" fill="#10b981" />
+                <Area type="monotone" dataKey="failed" stackId="1" stroke="#ef4444" fill="#ef4444" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Scheduled Broadcasts */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -587,6 +830,7 @@ export default function Schedule() {
           </CardContent>
         </Card>
 
+        {/* Upcoming Schedules (Legacy) */}
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Schedules (Legacy)</CardTitle>

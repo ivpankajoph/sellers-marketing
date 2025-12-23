@@ -24,7 +24,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bot, MessageSquare, Clock, FileText, TrendingUp } from "lucide-react";
+import {
+  Bot,
+  MessageSquare,
+  Clock,
+  FileText,
+  TrendingUp,
+  Hash,
+  Users,
+  ArrowDownUp,
+  BarChart2,
+  Wallet,
+} from "lucide-react";
 
 // Pricing constants (₹500 per 100,000 tokens)
 const TOKEN_PRICE_PER_LAKH = 500;
@@ -94,21 +105,21 @@ const getModelBadge = (model: string) => {
   }
   return (
     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-      Boomer
-    </Badge>
+        Boomer
+      </Badge>
   );
 };
 
-// ✅ STATIC MOCK DATA BASED ON YOUR INPUT
+// ✅ STATIC MOCK DATA
 const mockData: AgentPerformanceData = {
   period: "month",
   summary: {
     totalAgents: 2,
     activeAgents: 2,
-    totalChats: 395, // 369 + 26
-    totalMessages: 1975, // (369*5) + (26*5)
+    totalChats: 395,
+    totalMessages: 1975,
     avgResponseTime: "1.2s",
-    totalTokens: 158000, // 147,600 + 10,400
+    totalTokens: 158000,
     inputTokens: 79000,
     outputTokens: 79000,
   },
@@ -156,16 +167,15 @@ const mockData: AgentPerformanceData = {
 export default function AgentPerformance() {
   const [period, setPeriod] = useState("month");
 
-  // Use static mock data — no API call
   const data = mockData;
-
   const totalCost = (data.summary.totalTokens ?? 0) * TOKEN_PRICE_PER_TOKEN;
   const dailyTokenUsage = data.dailyTokenUsage ?? [];
+  const summary = data.summary;
+  const agents = data.agents;
+
   const maxTokens = dailyTokenUsage.length
     ? Math.max(...dailyTokenUsage.map((d) => d.tokens))
     : 1;
-  const summary = data.summary;
-  const agents = data.agents;
 
   return (
     <DashboardLayout>
@@ -193,202 +203,287 @@ export default function AgentPerformance() {
           </Select>
         </div>
 
-        {/* Render UI with static data */}
-        <>
-          {/* Summary Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  Total Agents
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{summary.totalAgents}</div>
-                <p className="text-xs text-muted-foreground">
-                  {summary.activeAgents} active
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Chats Handled
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(summary.totalChats)}</div>
-                <p className="text-xs text-muted-foreground">Unique conversations</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Total Tokens
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(summary.totalTokens)}</div>
-                <p className="text-xs text-muted-foreground">Input + Output</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Est. Cost
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatINR(totalCost)}</div>
-                <p className="text-xs text-muted-foreground">Based on ₹500 / 1L tokens</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Daily Token Usage Chart */}
-          {dailyTokenUsage.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Token Usage</CardTitle>
-                <CardDescription>Token consumption over time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-2">
-                    <span>Low</span>
-                    <span>High</span>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                    {dailyTokenUsage.map((day, idx) => (
-                      <div key={idx} className="flex flex-col items-center">
-                        <div className="text-[10px] text-muted-foreground mb-1">
-                          {formatDateLabel(day.date)}
-                        </div>
-                        <div
-                          className="w-full bg-primary/10 rounded-t"
-                          style={{
-                            height: `${Math.max(20, (day.tokens / maxTokens) * 100)}px`,
-                          }}
-                        />
-                        <div className="text-[10px] mt-1 font-medium">
-                          {formatNumber(day.tokens)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Agent Leaderboard */}
+        {/* === Enhanced Summary Metrics === */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Agent Leaderboard</CardTitle>
-              <CardDescription>
-                Top performing AI agents this{" "}
-                {["today", "yesterday"].includes(period) ? "day" : period}.
-              </CardDescription>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Total Chats
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              {agents.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Agent</TableHead>
-                      <TableHead>Model</TableHead>
-                      <TableHead className="text-center">Chats</TableHead>
-                      <TableHead className="text-center">Messages</TableHead>
-                      <TableHead className="text-right">Tokens</TableHead>
-                      <TableHead className="text-right">Cost</TableHead>
-                      <TableHead>Avg Response</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {agents.map((agent) => {
-                      const agentCost = (agent.totalTokens ?? 0) * TOKEN_PRICE_PER_TOKEN;
-                      return (
-                        <TableRow key={agent.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-3">
-                              <Avatar>
-                                <AvatarFallback className="bg-primary/10 text-primary">
-                                  {agent.name
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")
-                                    .slice(0, 2)
-                                    .toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">{agent.name}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  Temp: {agent.temperature}
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              {getModelBadge(agent.model)}
-                              <span className="text-xs text-muted-foreground">
-                                {agent.model || "unknown"}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="text-lg font-semibold">
-                              {formatNumber(agent.chatsHandled ?? 0)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="text-lg font-semibold">
-                              {formatNumber(agent.messagesGenerated ?? 0)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="text-sm">
-                              <div>{formatNumber(agent.totalTokens ?? 0)}</div>
-                              <div className="text-[10px] text-muted-foreground">
-                                in: {formatNumber(agent.inputTokens ?? 0)} | out:{" "}
-                                {formatNumber(agent.outputTokens ?? 0)}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary">{formatINR(agentCost)}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span>{agent.avgResponseTime || "—s"}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={agent.isActive ? "default" : "secondary"}>
-                              {agent.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No AI agents found. Create your first agent to see performance data.</p>
-                </div>
-              )}
+              <div className="text-2xl font-bold">{formatNumber(summary.totalChats)}</div>
             </CardContent>
           </Card>
-        </>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Messages
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatNumber(summary.totalMessages)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <ArrowDownUp className="h-4 w-4" />
+                Input Tokens
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatNumber(summary.inputTokens)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <ArrowDownUp className="h-4 w-4 rotate-180" />
+                Output Tokens
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatNumber(summary.outputTokens)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Avg. Response
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{summary.avgResponseTime}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                Est. Cost
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatINR(totalCost)}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* === Daily Token Usage Chart === */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart2 className="h-5 w-5" />
+              Daily Token Usage
+            </CardTitle>
+            <CardDescription>Token consumption over the last 7 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end justify-between gap-1 h-32 mt-4">
+              {dailyTokenUsage.map((day, idx) => {
+                const height = Math.max(20, (day.tokens / maxTokens) * 100);
+                return (
+                  <div key={idx} className="flex flex-col items-center w-full">
+                    <div className="text-[10px] text-muted-foreground mb-1 whitespace-nowrap">
+                      {formatDateLabel(day.date)}
+                    </div>
+                    <div
+                      className="w-full bg-blue-100 rounded-t flex items-center justify-center"
+                      style={{ height: `${height}%` }}
+                    >
+                      <span className="text-[8px] font-bold text-blue-700">
+                        {formatNumber(day.tokens)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* === Agent Performance Cards === */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {agents.map((agent) => {
+            const agentCost = (agent.totalTokens ?? 0) * TOKEN_PRICE_PER_TOKEN;
+            return (
+              <Card key={agent.id} className="border-l-4 border-l-primary">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{agent.name}</CardTitle>
+                    <Badge variant={agent.isActive ? "default" : "secondary"}>
+                      {agent.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <CardDescription>Model: {agent.model}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">Chats Handled</div>
+                      <div className="font-semibold">{formatNumber(agent.chatsHandled)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Messages</div>
+                      <div className="font-semibold">{formatNumber(agent.messagesGenerated)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Total Tokens</div>
+                      <div className="font-semibold">{formatNumber(agent.totalTokens)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Cost</div>
+                      <div className="font-semibold text-green-700">{formatINR(agentCost)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Avg. Response</div>
+                      <div className="font-semibold">{agent.avgResponseTime}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Temperature</div>
+                      <div className="font-semibold">{agent.temperature}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* === Billing Summary === */}
+        <Card className="border-2 border-gray-100">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              AI Token Billing Summary
+            </CardTitle>
+            <CardDescription>Pricing: ₹{TOKEN_PRICE_PER_LAKH} per 100,000 tokens</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="space-y-1">
+                <div className="text-muted-foreground">Input Tokens</div>
+                <div className="font-semibold">{formatNumber(summary.inputTokens)}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-muted-foreground">Output Tokens</div>
+                <div className="font-semibold">{formatNumber(summary.outputTokens)}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-muted-foreground">Total Cost</div>
+                <div className="font-bold text-lg text-green-700">{formatINR(totalCost)}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* === Original Leaderboard (Preserved) === */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Leaderboard</CardTitle>
+            <CardDescription>
+              Top performing AI agents this{" "}
+              {["today", "yesterday"].includes(period) ? "day" : period}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {agents.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead className="text-center">Chats</TableHead>
+                    <TableHead className="text-center">Messages</TableHead>
+                    <TableHead className="text-right">Tokens</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead>Avg Response</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {agents.map((agent) => {
+                    const agentCost = (agent.totalTokens ?? 0) * TOKEN_PRICE_PER_TOKEN;
+                    return (
+                      <TableRow key={agent.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-3">
+                            <Avatar>
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {agent.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium">{agent.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Temp: {agent.temperature}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            {getModelBadge(agent.model)}
+                            <span className="text-xs text-muted-foreground">
+                              {agent.model || "unknown"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="text-lg font-semibold">
+                            {formatNumber(agent.chatsHandled ?? 0)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="text-lg font-semibold">
+                            {formatNumber(agent.messagesGenerated ?? 0)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="text-sm">
+                            <div>{formatNumber(agent.totalTokens ?? 0)}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              in: {formatNumber(agent.inputTokens ?? 0)} | out:{" "}
+                              {formatNumber(agent.outputTokens ?? 0)}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary">{formatINR(agentCost)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <span>{agent.avgResponseTime || "—s"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={agent.isActive ? "default" : "secondary"}>
+                            {agent.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No AI agents found. Create your first agent to see performance data.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );

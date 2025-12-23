@@ -18,6 +18,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+// Chart components
+import {
+  ResponsiveContainer,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
+
 // Types
 interface MessageStats {
   contactId: string;
@@ -30,14 +45,38 @@ interface MessageStats {
   outboundTokens: number;
 }
 
-// Credits configuration - Update these with actual values from your system
+// Credits configuration
 const TOTAL_WHATSAPP_CREDITS = 5000;
 const TOTAL_AI_TOKENS = 200000;
 
 // Pricing
 const WHATSAPP_COST_PER_MESSAGE = 0.85; // ₹0.85 per message
+const TOKEN_RATE_PER_UNIT = 500 / 100000; // ₹0.005 per token
 
-// Simple counter animation hook
+// Static AI token usage
+const STATIC_AI_TOKENS = {
+  total: 30411,
+  outbound: 1313,
+  inbound: 29098,
+};
+
+const FILTER_OPTIONS = [
+  { value: 'day', label: 'Last 24 Hours' },
+  { value: 'week', label: 'Last 7 Days' },
+  { value: 'month', label: 'Last 30 Days' },
+  { value: 'all', label: 'All Time' },
+];
+
+// Mock time-series data for chart (replace with real API if available)
+const generateTokenTimeSeries = () => {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return days.map((day, i) => ({
+    day,
+    tokens: Math.floor(2000 + Math.random() * 3000),
+    messages: Math.floor(10 + Math.random() * 20),
+  }));
+};
+
 const useCountAnimation = (target: number, duration: number = 1000) => {
   const [value, setValue] = useState(0);
 
@@ -48,13 +87,12 @@ const useCountAnimation = (target: number, duration: number = 1000) => {
     }
 
     const startTime = performance.now();
-    const increment = target / (duration / 16);
-
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
-      const current = Math.min(Math.floor((elapsed / duration) * target), target);
+      const progress = Math.min(elapsed / duration, 1);
+      const current = Math.floor(progress * target);
       setValue(current);
-      if (current < target) {
+      if (progress < 1) {
         requestAnimationFrame(animate);
       }
     };
@@ -64,24 +102,6 @@ const useCountAnimation = (target: number, duration: number = 1000) => {
 
   return value;
 };
-
-// Static AI token usage (as per your input)
-const STATIC_AI_TOKENS = {
-  total: 30411,
-  outbound: 1313,
-  inbound: 29098,
-};
-
-// Pricing: ₹500 per 100,000 tokens
-const TOKEN_RATE_PER_UNIT = 500 / 100000; // ₹0.005 per token
-const aiTokenCost = Math.round(STATIC_AI_TOKENS.total * TOKEN_RATE_PER_UNIT); // ₹152
-
-const FILTER_OPTIONS = [
-  { value: 'day', label: 'Last 24 Hours' },
-  { value: 'week', label: 'Last 7 Days' },
-  { value: 'month', label: 'Last 30 Days' },
-  { value: 'all', label: 'All Time' },
-];
 
 export default function ContactUsageDetail() {
   const CONTACT_ID = '4d460e87-b06f-4c96-ab75-3a484e9a18ad';
@@ -112,7 +132,7 @@ export default function ContactUsageDetail() {
     return () => clearInterval(interval);
   }, [filter]);
 
-  // Animated message values
+  // Animated values
   const animatedTotalMsg = useCountAnimation(stats?.totalMessages || 0);
   const animatedSentMsg = useCountAnimation(stats?.outboundMessages || 0);
   const animatedReceivedMsg = useCountAnimation(stats?.inboundMessages || 0);
@@ -120,12 +140,13 @@ export default function ContactUsageDetail() {
   const animatedSentTok = useCountAnimation(stats?.outboundTokens || STATIC_AI_TOKENS.outbound);
   const animatedReceivedTok = useCountAnimation(stats?.inboundTokens || STATIC_AI_TOKENS.inbound);
 
-  // Messages are billed at ₹0.85 each
+  // Costs
   const totalMessageCost = ((stats?.totalMessages || 0) * WHATSAPP_COST_PER_MESSAGE).toFixed(2);
   const sentMessageCost = ((stats?.outboundMessages || 0) * WHATSAPP_COST_PER_MESSAGE).toFixed(2);
   const receivedMessageCost = ((stats?.inboundMessages || 0) * WHATSAPP_COST_PER_MESSAGE).toFixed(2);
+  const aiTokenCost = Math.round((stats?.totalTokens || STATIC_AI_TOKENS.total) * TOKEN_RATE_PER_UNIT);
 
-  // Calculate remaining credits
+  // Credit usage
   const usedWhatsAppCredits = stats?.totalMessages || 0;
   const remainingWhatsAppCredits = Math.max(0, TOTAL_WHATSAPP_CREDITS - usedWhatsAppCredits);
   const whatsappUsagePercentage = Math.min(100, (usedWhatsAppCredits / TOTAL_WHATSAPP_CREDITS) * 100);
@@ -133,6 +154,14 @@ export default function ContactUsageDetail() {
   const usedAITokens = stats?.totalTokens || STATIC_AI_TOKENS.total;
   const remainingAITokens = Math.max(0, TOTAL_AI_TOKENS - usedAITokens);
   const aiTokenUsagePercentage = Math.min(100, (usedAITokens / TOTAL_AI_TOKENS) * 100);
+
+  // Chart data
+  const messageDirectionData = [
+    { name: 'Sent', value: animatedSentMsg, color: '#3b82f6' },
+    { name: 'Received', value: animatedReceivedMsg, color: '#10b981' },
+  ].filter(item => item.value > 0);
+
+  const timeSeriesData = generateTokenTimeSeries();
 
   if (loading && !stats) {
     return (
@@ -203,239 +232,236 @@ export default function ContactUsageDetail() {
           </div>
         </div>
 
-        {/* Summary Cards */}
+        {/* Summary Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <MessageCircle className="h-5 w-5 text-gray-500 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{animatedTotalMsg}</div>
+              <div className="text-xs text-gray-500">Total Msgs</div>
+            </CardContent>
+          </Card>
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <Send className="h-5 w-5 text-blue-600 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{animatedSentMsg}</div>
+              <div className="text-xs text-gray-500">Sent</div>
+            </CardContent>
+          </Card>
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <Inbox className="h-5 w-5 text-green-600 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{animatedReceivedMsg}</div>
+              <div className="text-xs text-gray-500">Received</div>
+            </CardContent>
+          </Card>
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <Hash className="h-5 w-5 text-gray-500 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{(animatedTotalTok / 1000).toFixed(1)}K</div>
+              <div className="text-xs text-gray-500">Total Tokens</div>
+            </CardContent>
+          </Card>
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <Send className="h-5 w-5 text-purple-600 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{(animatedSentTok / 1000).toFixed(1)}K</div>
+              <div className="text-xs text-gray-500">Out Tokens</div>
+            </CardContent>
+          </Card>
+          <Card className="text-center">
+            <CardContent className="p-4">
+              <Inbox className="h-5 w-5 text-amber-600 mx-auto" />
+              <div className="text-2xl font-bold mt-2">{(animatedReceivedTok / 1000).toFixed(1)}K</div>
+              <div className="text-xs text-gray-500">In Tokens</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Analytics Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* WhatsApp Credits Overview */}
-          <Card className="border-2 border-blue-200">
+          {/* Message Direction */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Message Direction</CardTitle>
+              <CardDescription>Sent vs Received messages</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={250}>
+                <RechartsPieChart>
+                  <Pie
+                    data={messageDirectionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {messageDirectionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [value, 'Messages']} />
+                  <Legend />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Token Usage Over Time */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Token Usage (Last 7 Days)</CardTitle>
+              <CardDescription>Daily token consumption trend</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={250}>
+                <AreaChart data={timeSeriesData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="day" stroke="#666" />
+                  <YAxis stroke="#666" />
+                  <Tooltip />
+                  <Legend />
+                  <Area type="monotone" dataKey="tokens" stroke="#8b5cf6" fill="#c7d2fe" name="Tokens Used" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Wallet & Billing Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-2 border-blue-100">
             <CardHeader>
               <CardTitle className="text-lg font-semibold flex items-center gap-2">
                 <MessageCircle className="h-5 w-5 text-blue-600" />
                 WhatsApp Credits
               </CardTitle>
-              <CardDescription>Track your message credit usage (₹0.85 per message)</CardDescription>
+              <CardDescription>₹0.85 per message</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">{TOTAL_WHATSAPP_CREDITS.toLocaleString()}</div>
-                  <div className="text-xs text-gray-600 mt-1">Total Credits</div>
+                  <div className="text-2xl font-bold text-blue-700">{TOTAL_WHATSAPP_CREDITS}</div>
+                  <div className="text-xs text-gray-600">Total</div>
                 </div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{usedWhatsAppCredits.toLocaleString()}</div>
-                  <div className="text-xs text-gray-600 mt-1">Used</div>
+                  <div className="text-2xl font-bold text-orange-700">{usedWhatsAppCredits}</div>
+                  <div className="text-xs text-gray-600">Used</div>
                 </div>
                 <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{remainingWhatsAppCredits.toLocaleString()}</div>
-                  <div className="text-xs text-gray-600 mt-1">Remaining</div>
+                  <div className="text-2xl font-bold text-green-700">{remainingWhatsAppCredits}</div>
+                  <div className="text-xs text-gray-600">Remaining</div>
                 </div>
               </div>
-              
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Usage</span>
-                  <span className="font-semibold">{whatsappUsagePercentage.toFixed(1)}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                  <div 
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${whatsappUsagePercentage}%` }}
-                  ></div>
-                </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full"
+                  style={{ width: `${whatsappUsagePercentage}%` }}
+                ></div>
               </div>
-
-              <div className="pt-3 border-t">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Cost per message</span>
-                  <span className="font-semibold">₹0.85</span>
-                </div>
-                <div className="flex justify-between text-sm mt-2">
-                  <span className="text-gray-600">Total cost</span>
-                  <span className="text-lg font-bold text-blue-600">₹{totalMessageCost}</span>
-                </div>
+              <div className="text-right text-sm">
+                Total Cost: <span className="font-bold text-blue-700">₹{totalMessageCost}</span>
               </div>
             </CardContent>
           </Card>
 
-          {/* AI Tokens Overview */}
-          <Card className="border-2 border-purple-200">
+          <Card className="border-2 border-purple-100">
             <CardHeader>
               <CardTitle className="text-lg font-semibold flex items-center gap-2">
                 <Bot className="h-5 w-5 text-purple-600" />
                 AI Tokens
               </CardTitle>
-              <CardDescription>Track your AI token consumption</CardDescription>
+              <CardDescription>₹500 per 100K tokens</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 bg-purple-50 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-600">{(TOTAL_AI_TOKENS / 1000).toFixed(0)}K</div>
-                  <div className="text-xs text-gray-600 mt-1">Total Tokens</div>
+                  <div className="text-2xl font-bold text-purple-700">{(TOTAL_AI_TOKENS / 1000).toFixed(0)}K</div>
+                  <div className="text-xs text-gray-600">Total</div>
                 </div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{(usedAITokens / 1000).toFixed(1)}K</div>
-                  <div className="text-xs text-gray-600 mt-1">Used</div>
+                  <div className="text-2xl font-bold text-orange-700">{(usedAITokens / 1000).toFixed(1)}K</div>
+                  <div className="text-xs text-gray-600">Used</div>
                 </div>
                 <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{(remainingAITokens / 1000).toFixed(1)}K</div>
-                  <div className="text-xs text-gray-600 mt-1">Remaining</div>
+                  <div className="text-2xl font-bold text-green-700">{(remainingAITokens / 1000).toFixed(1)}K</div>
+                  <div className="text-xs text-gray-600">Remaining</div>
                 </div>
               </div>
-              
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Usage</span>
-                  <span className="font-semibold">{aiTokenUsagePercentage.toFixed(1)}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                  <div 
-                    className="bg-gradient-to-r from-purple-500 to-purple-600 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${aiTokenUsagePercentage}%` }}
-                  ></div>
-                </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-purple-500 h-2 rounded-full"
+                  style={{ width: `${aiTokenUsagePercentage}%` }}
+                ></div>
               </div>
-
-              <div className="pt-3 border-t">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Rate</span>
-                  <span className="font-semibold">₹500 / 100K tokens</span>
-                </div>
-                <div className="flex justify-between text-sm mt-2">
-                  <span className="text-gray-600">Total cost</span>
-                  <span className="text-lg font-bold text-purple-600">₹{aiTokenCost.toLocaleString()}</span>
-                </div>
+              <div className="text-right text-sm">
+                Total Cost: <span className="font-bold text-purple-700">₹{aiTokenCost}</span>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Detailed Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Messages */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Message Breakdown</CardTitle>
-              <CardDescription>Detailed message statistics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <MessageCircle className="h-5 w-5 text-gray-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-gray-800">{animatedTotalMsg}</div>
-                  <div className="text-xs text-gray-500">Total</div>
-                </div>
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <Send className="h-5 w-5 text-blue-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-blue-700">{animatedSentMsg}</div>
-                  <div className="text-xs text-gray-500">Sent</div>
-                </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <Inbox className="h-5 w-5 text-green-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-green-700">{animatedReceivedMsg}</div>
-                  <div className="text-xs text-gray-500">Received</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tokens */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Token Breakdown</CardTitle>
-              <CardDescription>Detailed token usage statistics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <Hash className="h-5 w-5 text-gray-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-gray-800">{animatedTotalTok.toLocaleString()}</div>
-                  <div className="text-xs text-gray-500">Total</div>
-                </div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg">
-                  <Send className="h-5 w-5 text-purple-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-purple-700">{animatedSentTok.toLocaleString()}</div>
-                  <div className="text-xs text-gray-500">Outbound</div>
-                </div>
-                <div className="text-center p-3 bg-amber-50 rounded-lg">
-                  <Inbox className="h-5 w-5 text-amber-600 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-amber-700">{animatedReceivedTok.toLocaleString()}</div>
-                  <div className="text-xs text-gray-500">Inbound</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Billing Summary - Consolidated */}
-        <Card className="border-2 border-green-200">
+        {/* Billing Summary */}
+        <Card className="border-2 border-gray-100">
           <CardHeader>
             <CardTitle className="text-xl font-semibold">Billing Summary</CardTitle>
-            <CardDescription>Complete cost breakdown for the selected period</CardDescription>
+            <CardDescription>Cost breakdown (INR)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* WhatsApp Billing */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-blue-700 flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp Messages
+              <div className="space-y-2">
+                <h3 className="font-medium flex items-center gap-1">
+                  <MessageCircle className="h-4 w-4 text-blue-600" /> WhatsApp
                 </h3>
-                <div className="space-y-2 text-sm">
+                <div className="text-sm space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Sent Messages</span>
+                    <span>Sent ({animatedSentMsg})</span>
                     <span>₹{sentMessageCost}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Received Messages</span>
+                    <span>Received ({animatedReceivedMsg})</span>
                     <span>₹{receivedMessageCost}</span>
                   </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
+                  <div className="flex justify-between font-bold pt-2 border-t">
                     <span>Subtotal</span>
-                    <span className="text-blue-600">₹{totalMessageCost}</span>
+                    <span className="text-blue-700">₹{totalMessageCost}</span>
                   </div>
                 </div>
               </div>
-
-              {/* AI Token Billing */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-purple-700 flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  AI Tokens
+              <div className="space-y-2">
+                <h3 className="font-medium flex items-center gap-1">
+                  <Bot className="h-4 w-4 text-purple-600" /> AI Tokens
                 </h3>
-                <div className="space-y-2 text-sm">
+                <div className="text-sm space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Tokens Used</span>
-                    <span>{STATIC_AI_TOKENS.total.toLocaleString()}</span>
+                    <span>Used Tokens</span>
+                    <span>{animatedTotalTok.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Rate</span>
+                    <span>Rate</span>
                     <span>₹500 / 100K</span>
                   </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
+                  <div className="flex justify-between font-bold pt-2 border-t">
                     <span>Subtotal</span>
-                    <span className="text-purple-600">₹{aiTokenCost.toLocaleString()}</span>
+                    <span className="text-purple-700">₹{aiTokenCost}</span>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* Grand Total */}
-            <div className="mt-6 pt-4 border-t-2">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-bold">Total Cost</span>
-                <span className="text-3xl font-bold text-green-600">
-                  ₹{(parseFloat(totalMessageCost) + aiTokenCost).toFixed(2)}
-                </span>
-              </div>
+            <div className="mt-6 pt-4 border-t border-gray-300 flex justify-between items-center">
+              <span className="text-lg font-bold">Total Cost</span>
+              <span className="text-2xl font-bold text-green-700">
+                ₹{(parseFloat(totalMessageCost) + aiTokenCost).toFixed(2)}
+              </span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Info Footer */}
+        {/* Footer */}
         <div className="text-center text-sm text-gray-500">
-          <p>Data reflects usage for filter: <strong>{FILTER_OPTIONS.find(f => f.value === filter)?.label}</strong></p>
-          <p className="mt-1">Auto-refreshes every 10 seconds.</p>
+          <p>Data for: <strong>{FILTER_OPTIONS.find(f => f.value === filter)?.label}</strong> • Auto-refreshes every 10s</p>
         </div>
       </div>
     </DashboardLayout>

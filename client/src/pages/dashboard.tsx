@@ -100,7 +100,7 @@ interface EnhancedDashboardStats {
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState<string>("week");
+  const [period, setPeriod] = useState<string>("month");
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
 
   // Generate hour options (0–23)

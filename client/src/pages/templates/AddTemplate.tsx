@@ -25,13 +25,21 @@ import {
   ExternalLink,
   Upload,
   X,
-  Image as ImageIcon,
+  Plus,
+  Trash2,
 } from "lucide-react";
-
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Info, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { PhonePreview } from "@/components/ui/phone-preview";
+
+type ButtonType = {
+  id: string;
+  type: "quick_reply" | "url" | "phone_number";
+  text: string;
+  url?: string;
+  phone_number?: string;
+};
 
 export default function AddTemplate() {
   const [, setLocation] = useLocation();
@@ -46,6 +54,7 @@ export default function AddTemplate() {
   const [headerImageFile, setHeaderImageFile] = useState<File | null>(null);
   const [body, setBody] = useState("");
   const [footer, setFooter] = useState("");
+  const [buttons, setButtons] = useState<ButtonType[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,6 +79,25 @@ export default function AddTemplate() {
     if (imageInputRef.current) {
       imageInputRef.current.value = "";
     }
+  };
+
+  const addNewButton = () => {
+    if (buttons.length >= 3) {
+      toast.error("You can add up to 3 buttons only");
+      return;
+    }
+    setButtons([
+      ...buttons,
+      { id: Date.now().toString(), type: "quick_reply", text: "" },
+    ]);
+  };
+
+  const updateButton = (id: string, field: keyof ButtonType, value: string) => {
+    setButtons(buttons.map(btn => btn.id === id ? { ...btn, [field]: value } : btn));
+  };
+
+  const removeButton = (id: string) => {
+    setButtons(buttons.filter(btn => btn.id !== id));
   };
 
   const createTemplateMutation = useMutation({
@@ -111,6 +139,16 @@ export default function AddTemplate() {
 
     const templateName = name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
 
+    // Validate buttons
+    const validButtons = buttons
+      .filter(btn => btn.text.trim())
+      .map(btn => ({
+        type: btn.type,
+        text: btn.text.trim(),
+        ...(btn.type === "url" && { url: btn.url || "https://example.com" }),
+        ...(btn.type === "phone_number" && { phone_number: btn.phone_number || "+1234567890" }),
+      }));
+
     createTemplateMutation.mutate({
       name: templateName,
       category,
@@ -119,15 +157,14 @@ export default function AddTemplate() {
       headerText: headerType === "text" ? headerText : null,
       content: body,
       footer: footer || null,
+      buttons: validButtons.length > 0 ? validButtons : undefined,
       status: "pending",
     });
   };
 
   return (
     <DashboardLayout>
-      <h2 className="text-3xl font-bold tracking-tight">
-        Add New Template
-      </h2>
+      <h2 className="text-3xl font-bold tracking-tight">Add New Template</h2>
       <Card className="mt-4 border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-900">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -185,7 +222,6 @@ export default function AddTemplate() {
       </Card>
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div>
-       
           <p className="text-muted-foreground">
             Create a WhatsApp message template for approval
           </p>
@@ -207,7 +243,9 @@ export default function AddTemplate() {
                     id="name"
                     placeholder="e.g., welcome_message_v2"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) =>
+                      setName(e.target.value.toLowerCase().replace(/\s+/g, "_"))
+                    }
                   />
                   <p className="text-xs text-muted-foreground">
                     Use lowercase letters, numbers, and underscores only
@@ -314,7 +352,7 @@ export default function AddTemplate() {
                           e.preventDefault();
                           e.stopPropagation();
                           const file = e.dataTransfer.files?.[0];
-                          if (file && file.type.startsWith('image/')) {
+                          if (file && file.type.startsWith("image/")) {
                             if (file.size > 5 * 1024 * 1024) {
                               toast.error("Image must be less than 5MB");
                               return;
@@ -366,6 +404,90 @@ export default function AddTemplate() {
                   />
                 </div>
 
+                {/* Buttons Section */}
+                <div className="grid gap-2">
+                  <div className="flex justify-between items-center">
+                    <Label>Buttons (Max 3)</Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={addNewButton}
+                      disabled={buttons.length >= 3}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Add Button
+                    </Button>
+                  </div>
+
+                  {buttons.map((btn, idx) => (
+                    <div key={btn.id} className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-4">
+                        <Select
+                          value={btn.type}
+                          onValueChange={(val) =>
+                            updateButton(btn.id, "type", val as any)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                            <SelectItem value="url">URL</SelectItem>
+                            <SelectItem value="phone_number">Phone Number</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="col-span-6">
+                        <Input
+                          placeholder="Button text (max 30 chars)"
+                          value={btn.text}
+                          onChange={(e) => updateButton(btn.id, "text", e.target.value)}
+                          maxLength={30}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeButton(btn.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+
+                      {btn.type === "url" && (
+                        <div className="col-span-12 mt-1">
+                          <Input
+                            placeholder="URL (use {{1}} for variable)"
+                            value={btn.url || ""}
+                            onChange={(e) =>
+                              updateButton(btn.id, "url", e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
+                      {btn.type === "phone_number" && (
+                        <div className="col-span-12 mt-1">
+                          <Input
+                            placeholder="Phone number (e.g., +911234567890)"
+                            value={btn.phone_number || ""}
+                            onChange={(e) =>
+                              updateButton(btn.id, "phone_number", e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {buttons.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Add up to 3 buttons (Quick Reply, URL, or Phone Number)
+                    </p>
+                  )}
+                </div>
+
                 <Button
                   className="w-full"
                   onClick={handleSubmit}
@@ -408,6 +530,10 @@ export default function AddTemplate() {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
                   <span>Use variables for personalization</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
+                  <span>Buttons: max 3, text ≤ 30 chars</span>
                 </div>
               </CardContent>
             </Card>

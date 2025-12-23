@@ -93,7 +93,7 @@ export default function UserTable({
                   <TableHead>Pages</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-center">Add Token</TableHead>
-                  <TableHead className="text-center">Login</TableHead>
+                  {/* <TableHead className="text-center">Login</TableHead> */}
                   <TableHead className="text-center">Available Tokens</TableHead>
                   <TableHead className="w-[60px]"></TableHead> {/* Actions overflow */}
                 </TableRow>
@@ -143,20 +143,7 @@ export default function UserTable({
                       </Button>
                     </TableCell>
 
-                    {/* NEW: Login As */}
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onImpersonate(user.id);
-                        }}
-                        disabled={!user.isActive}
-                      >
-                        <LogIn className="h-3 w-3" />
-                      </Button>
-                    </TableCell>
+                 
 
                     {/* NEW: Available Tokens (static for now) */}
                     <TableCell className="text-center text-sm">

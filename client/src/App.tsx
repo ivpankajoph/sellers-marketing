@@ -246,7 +246,7 @@ function Router() {
       <Route path="/reports/delivery">
         {() => <ProtectedRoute component={DeliveryReport} />}
       </Route>
-      <Route path="/reports/campaigns">
+      <Route path="/reports/campaign">
         {() => <ProtectedRoute component={CampaignPerformance} />}
       </Route>
       <Route path="/reports/replies">

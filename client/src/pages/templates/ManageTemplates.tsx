@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import {
@@ -302,6 +302,10 @@ export default function ManageTemplates() {
     });
   };
 
+  useEffect(() => {
+    syncMetaTemplatesMutation.mutate();
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -449,7 +453,7 @@ export default function ManageTemplates() {
                         >
                           {template.metaStatus?.toLowerCase() ||
                             template.status}
-                        </Badge>
+                        </Badge>  
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -470,7 +474,7 @@ export default function ManageTemplates() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDate(template.updatedAt)}
+                        {formatDate(template.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
