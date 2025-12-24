@@ -393,7 +393,7 @@ const UserSchema = new Schema(
     email: { type: String },
     role: { type: String, default: "user" },
     createdAt: { type: String, required: true },
-    adminId: { type: String, required: true },
+
   },
   { collection: "users" }
 );
