@@ -6,7 +6,7 @@ import { getAuthHeaders } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,93 +64,48 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Contact {
-  id: string;
-  name: string;
-  phone: string;
-  email?: string;
-  tags: string[];
-}
-
-interface Message {
-  id: string;
-  contactId: string;
-  content: string;
-  type: string;
-  direction: "inbound" | "outbound";
-  status: string;
-  timestamp: string;
-  replyToMessageId?: string;
-  replyToContent?: string;
-  mediaUrl?: string;
-}
-
-interface Chat {
-  id: string;
-  contactId: string;
-  contact: Contact;
-  lastMessage?: string;
-  lastMessageTime?: string;
-  lastInboundMessageTime?: string;
-  lastInboundMessage?: string;
-  unreadCount: number;
-  status: string;
-  windowExpiresAt?: string;
-}
-
-interface Template {
-  id: string;
-  name: string;
-  content: string;
-  variables: string[];
-  status: string;
-}
-
-interface Agent {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-}
-
-interface ImportedContact {
-  id: string;
-  name: string;
-  phone: string;
-  email?: string;
-  tags?: string[];
-}
+import {
+  Agent,
+  Chat,
+  Contact,
+  ImportedContact,
+  Message,
+  Template,
+} from "./type";
 
 // Normalize phone number for comparison (strip all non-digits)
-async function downloadMediaWithAuth(mediaUrl: string, filename: string, openInNewTab: boolean = false) {
+async function downloadMediaWithAuth(
+  mediaUrl: string,
+  filename: string,
+  openInNewTab: boolean = false
+) {
   try {
     const response = await fetch(`/api/webhook/whatsapp/media/${mediaUrl}`, {
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
-      throw new Error('Failed to download media');
+      throw new Error("Failed to download media");
     }
-    
+
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
-    
+
     if (openInNewTab) {
-      window.open(url, '_blank');
+      window.open(url, "_blank");
     } else {
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     }
-    
+
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) {
-    console.error('Media download error:', error);
-    toast.error('Failed to download file. Please try again.');
+    console.error("Media download error:", error);
+    toast.error("Failed to download file. Please try again.");
   }
 }
 
@@ -165,7 +120,7 @@ export default function WindowInbox() {
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [isBulkSendOpen, setIsBulkSendOpen] = useState(false);
   const [messageType, setMessageType] = useState<"template" | "custom" | "ai">(
-    "custom",
+    "custom"
   );
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("");
@@ -224,7 +179,7 @@ export default function WindowInbox() {
     queryKey: ["/api/chats/window"],
     queryFn: async () => {
       const res = await fetch("/api/chats", {
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error("Failed to fetch chats");
       const allChats = await res.json();
@@ -244,7 +199,7 @@ export default function WindowInbox() {
           windowExpiresAt: chat.lastInboundMessageTime
             ? new Date(
                 new Date(chat.lastInboundMessageTime).getTime() +
-                  24 * 60 * 60 * 1000,
+                  24 * 60 * 60 * 1000
               ).toISOString()
             : undefined,
         }));
@@ -359,7 +314,7 @@ export default function WindowInbox() {
               src={`/api/webhook/whatsapp/media/${mediaUrl}`}
               alt="Shared image"
               className="max-w-[280px] max-h-[300px] rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={() => downloadMediaWithAuth(mediaUrl, 'image.jpg', true)}
+              onClick={() => downloadMediaWithAuth(mediaUrl, "image.jpg", true)}
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
                 (
@@ -523,7 +478,7 @@ export default function WindowInbox() {
   useEffect(() => {
     const totalUnread = chats.reduce(
       (sum, chat) => sum + (chat.unreadCount || 0),
-      0,
+      0
     );
 
     // Skip initial mount to avoid playing sound on page load
@@ -679,11 +634,13 @@ export default function WindowInbox() {
       setSelectedAgent("");
       if (data.failed > 0) {
         toast.success(
-          `Sent to ${data.success} contacts, ${data.failed} failed`,
+          `Sent to ${data.success} contacts, ${data.failed} failed`
         );
       } else {
         toast.success(
-          `Message sent to ${data.success} contact${data.success > 1 ? "s" : ""}`,
+          `Message sent to ${data.success} contact${
+            data.success > 1 ? "s" : ""
+          }`
         );
       }
     },
@@ -729,14 +686,21 @@ export default function WindowInbox() {
   });
 
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
-  const [contactToBlock, setContactToBlock] = useState<{ phone: string; name: string } | null>(null);
+  const [contactToBlock, setContactToBlock] = useState<{
+    phone: string;
+    name: string;
+  } | null>(null);
 
   const blockContactMutation = useMutation({
     mutationFn: async ({ phone, name }: { phone: string; name: string }) => {
       const res = await fetchWithAuth("/api/contacts/block", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, name, reason: "Blocked from 24-hour window" }),
+        body: JSON.stringify({
+          phone,
+          name,
+          reason: "Blocked from 24-hour window",
+        }),
       });
       if (!res.ok) throw new Error("Failed to block contact");
       return res.json();
@@ -803,7 +767,7 @@ export default function WindowInbox() {
     setSelectedContacts((prev) =>
       prev.includes(contactId)
         ? prev.filter((id) => id !== contactId)
-        : [...prev, contactId],
+        : [...prev, contactId]
     );
   };
 
@@ -820,7 +784,9 @@ export default function WindowInbox() {
     } else if (messageType === "custom") {
       content = customMessage;
     } else if (messageType === "ai") {
-      content = `[AI Agent: ${agents.find((a) => a.id === selectedAgent)?.name || "Unknown"}]`;
+      content = `[AI Agent: ${
+        agents.find((a) => a.id === selectedAgent)?.name || "Unknown"
+      }]`;
     }
 
     if (!content && messageType !== "ai") {
@@ -860,7 +826,7 @@ export default function WindowInbox() {
           row.email,
           `"${row.lastMessage}"`,
           row.windowExpires,
-        ].join(","),
+        ].join(",")
       ),
     ].join("\n");
 
@@ -924,7 +890,7 @@ export default function WindowInbox() {
     .filter(
       (chat) =>
         chat.contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        chat.contact.phone.includes(searchQuery),
+        chat.contact.phone.includes(searchQuery)
     )
     .sort((a, b) => {
       const aTime =
@@ -945,7 +911,11 @@ export default function WindowInbox() {
   return (
     <DashboardLayout>
       <div className="h-[calc(100vh-80px)] md:h-[calc(100vh-100px)] flex flex-col gap-2 md:gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-hidden">
-        <div className={`flex flex-col md:flex-row md:items-center justify-between gap-2 flex-shrink-0 ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
+        <div
+          className={`flex flex-col md:flex-row md:items-center justify-between gap-2 flex-shrink-0 ${
+            mobileView === "chat" ? "hidden md:flex" : "flex"
+          }`}
+        >
           <div>
             <h2 className="text-lg md:text-2xl font-bold tracking-tight flex items-center gap-2">
               <Clock className="h-5 w-5 md:h-7 md:w-7 text-primary" />
@@ -957,20 +927,34 @@ export default function WindowInbox() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="md:size-default" onClick={handleDownload}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="md:size-default"
+              onClick={handleDownload}
+            >
               <Download className="h-4 w-4 md:mr-2" />
               <span className="hidden md:inline">Download List</span>
             </Button>
             {selectedContacts.length > 0 && (
-              <Button size="sm" className="md:size-default" onClick={() => setIsBulkSendOpen(true)}>
+              <Button
+                size="sm"
+                className="md:size-default"
+                onClick={() => setIsBulkSendOpen(true)}
+              >
                 <Send className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Send to</span> {selectedContacts.length}
+                <span className="hidden md:inline">Send to</span>{" "}
+                {selectedContacts.length}
               </Button>
             )}
           </div>
         </div>
 
-        <div className={`flex items-center gap-2 md:gap-4 p-2 md:p-3 bg-muted/50 rounded-lg flex-shrink-0 ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
+        <div
+          className={`flex items-center gap-2 md:gap-4 p-2 md:p-3 bg-muted/50 rounded-lg flex-shrink-0 ${
+            mobileView === "chat" ? "hidden md:flex" : "flex"
+          }`}
+        >
           <Checkbox
             checked={
               selectedContacts.length === chats.length && chats.length > 0
@@ -988,7 +972,11 @@ export default function WindowInbox() {
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row bg-card border border-border rounded-lg overflow-hidden shadow-sm">
-          <div className={`w-full md:w-80 lg:w-96 md:border-r border-border flex flex-col bg-background min-h-0 h-full ${mobileView === "chat" ? "hidden md:flex" : "flex"}`}>
+          <div
+            className={`w-full md:w-80 lg:w-96 md:border-r border-border flex flex-col bg-background min-h-0 h-full ${
+              mobileView === "chat" ? "hidden md:flex" : "flex"
+            }`}
+          >
             <div className="p-3 md:p-4 border-b border-border">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1019,7 +1007,9 @@ export default function WindowInbox() {
                   {filteredChats.map((chat) => (
                     <div
                       key={chat.id}
-                      className={`p-3 flex items-start gap-2 hover:bg-muted/50 cursor-pointer transition-colors ${chat.id === selectedChatId ? "bg-muted/50" : ""}`}
+                      className={`p-3 flex items-start gap-2 hover:bg-muted/50 cursor-pointer transition-colors ${
+                        chat.id === selectedChatId ? "bg-muted/50" : ""
+                      }`}
                     >
                       <Checkbox
                         checked={selectedContacts.includes(chat.contactId)}
@@ -1042,7 +1032,9 @@ export default function WindowInbox() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
                               <span
-                                className={`text-sm font-medium truncate ${chat.unreadCount > 0 ? "font-bold" : ""}`}
+                                className={`text-sm font-medium truncate ${
+                                  chat.unreadCount > 0 ? "font-bold" : ""
+                                }`}
                               >
                                 {getContactName(chat.contact)}
                               </span>
@@ -1077,14 +1069,18 @@ export default function WindowInbox() {
             </ScrollArea>
           </div>
 
-          <div className={`flex-1 flex flex-col bg-[#efeae2] dark:bg-zinc-900 bg-opacity-50 min-h-0 h-full ${mobileView === "list" ? "hidden md:flex" : "flex"}`}>
+          <div
+            className={`flex-1 flex flex-col bg-[#efeae2] dark:bg-zinc-900 bg-opacity-50 min-h-0 h-full ${
+              mobileView === "list" ? "hidden md:flex" : "flex"
+            }`}
+          >
             {selectedChat ? (
               <>
                 <div className="h-14 md:h-16 bg-background border-b border-border flex items-center justify-between px-2 md:px-6 flex-shrink-0">
                   <div className="flex items-center gap-2 md:gap-3">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="flex md:hidden h-9 w-9 shrink-0"
                       onClick={handleBackToList}
                     >
@@ -1114,10 +1110,18 @@ export default function WindowInbox() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 md:gap-2">
-                    <Button variant="ghost" size="icon" className="hidden md:flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="hidden md:flex"
+                    >
                       <Phone className="h-5 w-5 text-muted-foreground" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="hidden md:flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="hidden md:flex"
+                    >
                       <Video className="h-5 w-5 text-muted-foreground" />
                     </Button>
                     <DropdownMenu>
@@ -1153,7 +1157,7 @@ export default function WindowInbox() {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-6">
+                <ScrollArea className="flex-1 min-h-0 p-3 md:p-6">
                   {messagesLoading ? (
                     <div className="flex items-center justify-center h-full">
                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1167,10 +1171,18 @@ export default function WindowInbox() {
                       {messages.map((msg) => (
                         <div
                           key={msg.id}
-                          className={`flex ${msg.direction === "inbound" ? "justify-start" : "justify-end"} group`}
+                          className={`flex ${
+                            msg.direction === "inbound"
+                              ? "justify-start"
+                              : "justify-end"
+                          } group`}
                         >
                           <div
-                            className={`flex items-start gap-1 ${msg.direction === "inbound" ? "flex-row" : "flex-row-reverse"}`}
+                            className={`flex items-start gap-1 ${
+                              msg.direction === "inbound"
+                                ? "flex-row"
+                                : "flex-row-reverse"
+                            }`}
                           >
                             {msg.direction === "inbound" && (
                               <Button
@@ -1206,15 +1218,21 @@ export default function WindowInbox() {
                                 {formatTime(msg.timestamp)}
                                 {msg.direction === "outbound" && (
                                   <span
-                                    className={`ml-1 ${msg.status === "read" ? "text-blue-500" : msg.status === "failed" ? "text-red-500" : ""}`}
+                                    className={`ml-1 ${
+                                      msg.status === "read"
+                                        ? "text-blue-500"
+                                        : msg.status === "failed"
+                                        ? "text-red-500"
+                                        : ""
+                                    }`}
                                   >
                                     {msg.status === "read"
                                       ? "✓✓"
                                       : msg.status === "delivered"
-                                        ? "✓✓"
-                                        : msg.status === "failed"
-                                          ? "✗"
-                                          : "✓"}
+                                      ? "✓✓"
+                                      : msg.status === "failed"
+                                      ? "✗"
+                                      : "✓"}
                                   </span>
                                 )}
                               </span>
@@ -1225,8 +1243,11 @@ export default function WindowInbox() {
                       <div ref={messagesEndRef} />
                     </div>
                   )}
-                </div>
-
+                  <ScrollBar
+                    orientation="vertical"
+                    className="w-1.5 bg-green-800 [&>div]:bg-muted-foreground/40"
+                  />
+                </ScrollArea>
                 <div className="p-2 md:p-4 bg-background border-t border-border flex-shrink-0">
                   {replyingTo && (
                     <div className="mb-2 p-2 bg-muted rounded-lg flex items-center justify-between">
@@ -1291,7 +1312,9 @@ export default function WindowInbox() {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-4">
                 <Clock className="h-12 w-12 md:h-16 md:w-16 mb-4 opacity-50" />
-                <p className="text-base md:text-lg font-medium text-center">Select a contact to chat</p>
+                <p className="text-base md:text-lg font-medium text-center">
+                  Select a contact to chat
+                </p>
                 <p className="text-xs md:text-sm text-center">
                   Send messages without templates within the 24-hour window
                 </p>
@@ -1441,15 +1464,18 @@ export default function WindowInbox() {
           <AlertDialogHeader>
             <AlertDialogTitle>Block Contact</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to block {contactToBlock?.name || contactToBlock?.phone}? 
-              They will no longer be able to send you messages.
+              Are you sure you want to block{" "}
+              {contactToBlock?.name || contactToBlock?.phone}? They will no
+              longer be able to send you messages.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => contactToBlock && blockContactMutation.mutate(contactToBlock)}
+              onClick={() =>
+                contactToBlock && blockContactMutation.mutate(contactToBlock)
+              }
             >
               Block
             </AlertDialogAction>
