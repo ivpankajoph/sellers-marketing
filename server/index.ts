@@ -4,6 +4,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { connectToMongoDB } from "./modules/storage/mongodb.adapter";
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
+import { processLeads } from "./worker";
+import cron from "node-cron";
 
 const app = express();
 const httpServer = createServer(app);
@@ -66,6 +68,9 @@ app.use((req, res, next) => {
   await ensureDefaultAdmin();
   await registerRoutes(httpServer, app);
 
+  cron.schedule('*/10 * * * *', () => {
+  processLeads();
+});
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

@@ -53,10 +53,12 @@ const FormSchema = new Schema({
 }, { collection: 'forms' });
 
 const LeadSchema = new Schema({
-  id: { type: String, required: true, unique: true },
+  id: { type: String,  unique: true },
   fbLeadId: { type: String },
-  formId: { type: String, required: true },
+  lead_id: { type: String,  unique: true }, // FB Lead ID
+  formId: { type: String,  },
   formName: { type: String },
+  full_name: String,
   name: { type: String, default: '' },
   email: { type: String, default: '' },
   phone: { type: String, default: '' },
@@ -67,7 +69,23 @@ const LeadSchema = new Schema({
   autoReplySent: { type: Boolean, default: false },
   autoReplyMessage: { type: String },
   autoReplySentAt: { type: String },
+    template_sent: { type: Boolean, default: false },
+  raw_data: Object, // Store the full JSON from FB
 }, { collection: 'leads' });
+
+
+const TriggerSchema = new mongoose.Schema({
+  form_id: { type: String, required: true, unique: true },
+  form_name: String,
+  template_id: String, // The selected WhatsApp template ID
+  template_name: String,
+  isActive: { type: Boolean, default: true }
+});
+
+const SystemConfigSchema = new mongoose.Schema({
+  key: { type: String, default: 'scheduler_config', unique: true },
+  is_running: { type: Boolean, default: true }
+});
 
 const MappingSchema = new Schema({
   id: { type: String, required: true, unique: true },
@@ -495,6 +513,9 @@ UserActivityStatsSchema.index({ userId: 1, date: -1 });
 export const Agent = mongoose.models.Agent || mongoose.model('Agent', AgentSchema);
 export const Form = mongoose.models.Form || mongoose.model('Form', FormSchema);
 export const Lead = mongoose.models.Lead || mongoose.model('Lead', LeadSchema);
+export const Trigger = mongoose.models.Trigger || mongoose.model('Trigger_m', TriggerSchema);
+export const SystemConfig = mongoose.models.SystemConfig || mongoose.model('SystemConfig', SystemConfigSchema);
+
 export const Mapping = mongoose.models.Mapping || mongoose.model('Mapping', MappingSchema);
 export const Qualification = mongoose.models.Qualification || mongoose.model('Qualification', QualificationSchema);
 export const BroadcastList = mongoose.models.BroadcastList || mongoose.model('BroadcastList', BroadcastListSchema);
