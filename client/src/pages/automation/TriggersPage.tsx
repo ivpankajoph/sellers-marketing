@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 
 // --- API Helpers ---
-const fetchForms = async () => (await fetch('http://localhost:8080/api/forms')).json();
-const fetchTemplates = async () => (await fetch('http://localhost:8080/api/templates')).json();
-const fetchStatus = async () => (await fetch('http://localhost:8080/api/status')).json();
+const fetchForms = async () => (await fetch('https://ophmaarketing-579008086831.europe-west1.run.app/api/forms')).json();
+const fetchTemplates = async () => (await fetch('https://ophmaarketing-579008086831.europe-west1.run.app/api/templates')).json();
+const fetchStatus = async () => (await fetch('https://ophmaarketing-579008086831.europe-west1.run.app/api/status')).json();
 
 export default function LeadManager() {
   const queryClient = useQueryClient();
@@ -24,7 +24,7 @@ export default function LeadManager() {
   // 2. Mutations
   const triggerMutation = useMutation({
     mutationFn: async (payload: { form_id: any; form_name: any; template_id: any; template_name: any; }) => {
-      return fetch('http://localhost:8080/api/set-trigger', {
+      return fetch('https://ophmaarketing-579008086831.europe-west1.run.app/api/set-trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -38,7 +38,7 @@ export default function LeadManager() {
 
   const controlMutation = useMutation({
     mutationFn: async (shouldRun: boolean) => {
-      return fetch('http://localhost:8080/api/control', {
+      return fetch('https://ophmaarketing-579008086831.europe-west1.run.app/api/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ run: shouldRun }),
