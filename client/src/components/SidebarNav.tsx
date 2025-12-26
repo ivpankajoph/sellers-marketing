@@ -274,7 +274,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       href: "/automation/dashboard",
       pageId: "auto-reply",
       subItems: [
-        { label: "Triggers", href: "/automation/triggers" },
+        { label: "Facebook Lead Automation", href: "/automation/triggers" },
         { label: "Flows", href: "/whatsapp/flows" },
         { label: "Drip Campaigns", href: "/automation/campaigns" },
         { label: "Analytics", href: "/automation/analytics" },
