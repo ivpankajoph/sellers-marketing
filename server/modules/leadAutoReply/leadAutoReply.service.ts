@@ -31,7 +31,7 @@ function getLeadName(lead: Lead): string | undefined {
 }
 
 function getWhatsAppCredentials(): { token: string; phoneNumberId: string } | null {
-  const token = process.env.SYSTEM_USER_TOKEN_META
+  const token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   
   if (!token || !phoneNumberId) {
@@ -82,28 +82,28 @@ async function sendWhatsAppMessage(to: string, message: string): Promise<{ succe
 
 export async function processNewLead(lead: Lead): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    //console.log(`[AutoReply] Processing lead: ${lead.id} from form: ${lead.formId}`);
+    console.log(`[AutoReply] Processing lead: ${lead.id} from form: ${lead.formId}`);
 
     const phoneNumber = getLeadPhone(lead);
     if (!phoneNumber) {
-      //console.log(`[AutoReply] No phone number for lead ${lead.id}, skipping`);
+      console.log(`[AutoReply] No phone number for lead ${lead.id}, skipping`);
       return { success: false, error: 'No phone number available' };
     }
 
     if (lead.autoReplySent) {
-      //console.log(`[AutoReply] Already sent reply to lead ${lead.id}, skipping`);
+      console.log(`[AutoReply] Already sent reply to lead ${lead.id}, skipping`);
       return { success: false, error: 'Auto-reply already sent' };
     }
 
     const mapping = await mappingService.getMappingByFormId(lead.formId);
     if (!mapping || !mapping.isActive) {
-      //console.log(`[AutoReply] No active mapping for form ${lead.formId}`);
+      console.log(`[AutoReply] No active mapping for form ${lead.formId}`);
       return { success: false, error: 'No active agent mapping for this form' };
     }
 
     const agent = await agentService.getAgentById(mapping.agentId);
     if (!agent || !agent.isActive) {
-      //console.log(`[AutoReply] Agent ${mapping.agentId} not found or inactive`);
+      console.log(`[AutoReply] Agent ${mapping.agentId} not found or inactive`);
       return { success: false, error: 'Agent not found or inactive' };
     }
 
@@ -111,7 +111,7 @@ export async function processNewLead(lead: Lead): Promise<{ success: boolean; me
     const welcomePrompt = `A new lead just submitted a form. Here's their information:\n${leadContext}\n\nGenerate a friendly, professional welcome message to send them via WhatsApp. Keep it concise (under 200 characters). Don't include any placeholders - write the actual message ready to send.`;
 
     const formattedPhone = formatPhoneNumber(phoneNumber);
-    //console.log(`[AutoReply] Sending WhatsApp template to: ${formattedPhone}`);
+    console.log(`[AutoReply] Sending WhatsApp template to: ${formattedPhone}`);
     
     const sendResult = await templateService.sendHelloWorldTemplate(formattedPhone);
 
@@ -122,7 +122,7 @@ export async function processNewLead(lead: Lead): Promise<{ success: boolean; me
       lead.autoReplySentAt = new Date().toISOString();
       await updateLead(lead);
 
-      //console.log(`[AutoReply] Successfully sent template to ${formattedPhone}`);
+      console.log(`[AutoReply] Successfully sent template to ${formattedPhone}`);
       return { success: true, message: templateMessage };
     } else {
       console.error(`[AutoReply] Failed to send template: ${sendResult.error}`);

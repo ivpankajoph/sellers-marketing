@@ -3,8 +3,7 @@ import * as fbService from './fb.service';
 
 export async function syncForms(req: Request, res: Response) {
   try {
-    const userId = req.params.userId;
-    const forms = await fbService.syncLeadForms(userId);
+    const forms = await fbService.syncLeadForms();
     res.json({ success: true, forms, count: forms.length });
   } catch (error: any) {
     console.error('Error syncing forms:', error);
@@ -38,8 +37,8 @@ export async function getForm(req: Request, res: Response) {
 
 export async function syncLeads(req: Request, res: Response) {
   try {
-    const { formId,userId } = req.params;
-    const leads = await fbService.syncLeadsForForm(userId,formId);
+    const { formId } = req.params;
+    const leads = await fbService.syncLeadsForForm(formId);
     res.json({ success: true, leads, count: leads.length });
   } catch (error: any) {
     console.error('Error syncing leads:', error);

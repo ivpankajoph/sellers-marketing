@@ -56,7 +56,7 @@ export async function syncFlowsFromMeta(userId: string): Promise<{
     }
 
     if (!accessToken) {
-      accessToken = process.env.SYSTEM_USER_TOKEN_META
+      accessToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
       wabaId = wabaId || process.env.BUSINESS_ACCOUNT_ID;
     }
 
@@ -349,7 +349,7 @@ export async function createFlowInMeta(userId: string, data: {
   }
 
   if (!accessToken) {
-    accessToken = process.env.SYSTEM_USER_TOKEN_META
+    accessToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
     wabaId = wabaId || process.env.BUSINESS_ACCOUNT_ID;
   }
 
@@ -432,7 +432,7 @@ export async function publishFlowInMeta(userId: string, id: string): Promise<IWh
   }
 
   if (!accessToken) {
-    accessToken = process.env.SYSTEM_USER_TOKEN_META
+    accessToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   }
 
   if (!accessToken) {
@@ -477,7 +477,7 @@ export async function deprecateFlowInMeta(userId: string, id: string): Promise<I
   }
 
   if (!accessToken) {
-    accessToken = process.env.SYSTEM_USER_TOKEN_META;
+    accessToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   }
 
   if (!accessToken) {
@@ -526,7 +526,7 @@ export async function deleteFlowInMeta(userId: string, id: string): Promise<bool
   }
 
   if (!accessToken) {
-    accessToken = process.env.SYSTEM_USER_TOKEN_META
+    accessToken = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   }
 
   if (!accessToken) {

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { reportsService, TimeFilter } from './reports.service';
 import { getUserId } from '../auth/auth.routes';
+import { requireAuth } from '../auth/auth.routes';
+import * as billingController from './billing.controller';
 
 const router = Router();
 
@@ -125,5 +127,9 @@ router.get('/enhanced-dashboard', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch enhanced dashboard stats' });
   }
 });
+
+router.get('/billing/summary', requireAuth, billingController.getBillingSummary);
+router.get('/billing/conversations', requireAuth, billingController.getConversationsBilling);
+router.get('/billing/all-users', requireAuth, billingController.getAllUsersBilling);
 
 export default router;

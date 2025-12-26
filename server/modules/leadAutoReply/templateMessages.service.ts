@@ -23,7 +23,7 @@ export interface TemplateParameter {
 }
 
 function getWhatsAppCredentials(): { token: string; phoneNumberId: string } | null {
-  const token = process.env.SYSTEM_USER_TOKEN_META
+  const token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   
   if (!token || !phoneNumberId) {
@@ -46,7 +46,7 @@ export async function sendTemplateMessage(
 
   // Convert template name to Meta format: lowercase with underscores
   const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, '_');
-  //console.log(`[TemplateMessage] Sending template: "${metaTemplateName}" with language: "${template.languageCode}" to ${to}`);
+  console.log(`[TemplateMessage] Sending template: "${metaTemplateName}" with language: "${template.languageCode}" to ${to}`);
 
   // Try different language codes - Meta uses various formats
   const languageCodesToTry = [template.languageCode, 'en', 'en_US', 'en_GB'];
@@ -86,7 +86,7 @@ export async function sendTemplateMessage(
       const data = await response.json();
       
       if (response.ok && data.messages?.[0]?.id) {
-        //console.log(`[TemplateMessage] Successfully sent template "${metaTemplateName}" (lang: ${langCode}) to ${to}`);
+        console.log(`[TemplateMessage] Successfully sent template "${metaTemplateName}" (lang: ${langCode}) to ${to}`);
         return { success: true, messageId: data.messages[0].id };
       } else {
         const errorMsg = data.error?.message || 'Failed to send template message';
@@ -94,7 +94,7 @@ export async function sendTemplateMessage(
         
         // If template doesn't exist in this language, try next language
         if (errorCode === 132001 || errorMsg.includes('does not exist')) {
-          //console.log(`[TemplateMessage] Template "${metaTemplateName}" not found with lang "${langCode}", trying next...`);
+          console.log(`[TemplateMessage] Template "${metaTemplateName}" not found with lang "${langCode}", trying next...`);
           continue;
         }
         
@@ -138,7 +138,7 @@ export async function getAvailableTemplates(): Promise<{ templates: unknown[]; e
     );
     
     const phoneInfo = await phoneInfoResponse.json();
-    //console.log('[TemplateMessage] Phone info:', phoneInfo);
+    console.log('[TemplateMessage] Phone info:', phoneInfo);
 
     return { templates: [], error: 'Template listing requires WABA ID' };
   } catch (error) {

@@ -104,7 +104,7 @@ export async function createCampaign(userId: string, data: {
     }
   });
 
-  //console.log(`[Campaign] Created campaign "${data.name}" with ${campaignContacts.length} contacts`);
+  console.log(`[Campaign] Created campaign "${data.name}" with ${campaignContacts.length} contacts`);
   return campaign;
 }
 
@@ -151,7 +151,7 @@ export async function executeCampaign(userId: string, campaignId: string): Promi
   campaign.startedAt = new Date();
   await campaign.save();
 
-  //console.log(`[Campaign] Starting execution of "${campaign.name}" to ${campaign.contacts.length} contacts`);
+  console.log(`[Campaign] Starting execution of "${campaign.name}" to ${campaign.contacts.length} contacts`);
 
   const credentials = getWhatsAppCredentials();
   if (!credentials) {
@@ -208,7 +208,7 @@ export async function executeCampaign(userId: string, campaignId: string): Promi
   campaign.completedAt = new Date();
   await campaign.save();
 
-  //console.log(`[Campaign] Completed "${campaign.name}": ${sent} sent, ${failed} failed`);
+  console.log(`[Campaign] Completed "${campaign.name}": ${sent} sent, ${failed} failed`);
   return campaign;
 }
 
@@ -276,7 +276,7 @@ export async function markCampaignContactAsReplied(
         campaign.metrics.replied++;
         await campaign.save();
         updated = true;
-        //console.log(`[Campaign] Marked contact ${phone} as replied in campaign "${campaign.name}"`);
+        console.log(`[Campaign] Marked contact ${phone} as replied in campaign "${campaign.name}"`);
       }
     }
   }
@@ -357,7 +357,7 @@ export async function deleteCampaign(userId: string, campaignId: string): Promis
 }
 
 function getWhatsAppCredentials(): { token: string; phoneNumberId: string } | null {
-  const token = process.env.SYSTEM_USER_TOKEN_META
+  const token = process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.PHONE_NUMBER_ID;
   
   if (!token || !phoneNumberId) {

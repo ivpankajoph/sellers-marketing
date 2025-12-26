@@ -74,27 +74,27 @@ router.post('/import-excel', upload.single('file'), async (req: Request, res: Re
     }
 
     console.log(`[ImportExcel] Processing file: ${req.file.originalname}, size: ${req.file.size} bytes`);
-
+    
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
 
     console.log(`[ImportExcel] Raw rows from Excel: ${data.length}`);
-
+    
     const result = broadcastService.parseExcelContacts(data);
-
+    
     if (result.validContacts === 0 && data.length > 0) {
       const columnNames = data[0] ? Object.keys(data[0] as object).join(', ') : 'none found';
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: `No valid contacts found. Detected columns: ${columnNames}. Make sure your file has 'Name' and 'Mobile' (or 'Phone') columns.`,
         errors: result.errors,
         totalRows: result.totalRows,
       });
     }
-
+    
     const saveResult = await broadcastService.saveImportedContacts(result.contacts, 'excel');
-
+    
     res.json({
       success: true,
       contacts: result.contacts,
@@ -117,27 +117,27 @@ router.post('/import-csv', upload.single('file'), async (req: Request, res: Resp
     }
 
     console.log(`[ImportCSV] Processing file: ${req.file.originalname}, size: ${req.file.size} bytes`);
-
+    
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
 
     console.log(`[ImportCSV] Raw rows from CSV: ${data.length}`);
-
+    
     const result = broadcastService.parseExcelContacts(data);
-
+    
     if (result.validContacts === 0 && data.length > 0) {
       const columnNames = data[0] ? Object.keys(data[0] as object).join(', ') : 'none found';
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: `No valid contacts found. Detected columns: ${columnNames}. Make sure your file has 'Name' and 'Mobile' (or 'Phone') columns.`,
         errors: result.errors,
         totalRows: result.totalRows,
       });
     }
-
+    
     const saveResult = await broadcastService.saveImportedContacts(result.contacts, 'csv');
-
+    
     res.json({
       success: true,
       contacts: result.contacts,
@@ -172,9 +172,9 @@ router.get('/export-contacts', async (req: Request, res: Response) => {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
-
+    
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-
+    
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=contacts.xlsx');
     res.send(buffer);
@@ -195,7 +195,7 @@ router.get('/schedules', async (req: Request, res: Response) => {
 router.post('/schedules', async (req: Request, res: Response) => {
   try {
     const { name, messageType, templateName, customMessage, agentId, contactIds, listId, scheduledAt, recipientCount } = req.body;
-
+    
     if (!name || !messageType || !scheduledAt) {
       return res.status(400).json({ error: 'Name, message type, and scheduled time are required' });
     }
@@ -212,7 +212,7 @@ router.post('/schedules', async (req: Request, res: Response) => {
       status: 'scheduled',
       recipientCount: recipientCount || 0,
     });
-
+    
     res.status(201).json(schedule);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create scheduled message' });
@@ -252,10 +252,18 @@ router.post('/send', async (req: Request, res: Response) => {
       customMessage,
       agentId,
       campaignName,
-      senderId,
       isScheduled = false,
       scheduledTime
     } = req.body;
+
+    console.log('[Broadcast API] Received request:', { 
+      contacts: contacts?.length, 
+      messageType, 
+      templateName, 
+      campaignName,
+      isScheduled,
+      scheduledTime
+    });
 
     if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
       return res.status(400).json({ error: 'Contacts are required' });
@@ -285,14 +293,13 @@ router.post('/send', async (req: Request, res: Response) => {
       agentId,
       campaignName,
       isScheduled,
-      senderId,
       scheduledTime,
     });
 
-    // console.log('[Broadcast API] Result:', result);
+    console.log('[Broadcast API] Result:', result);
 
     if (result.credentialError) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: result.credentialError,
         ...result,
       });
@@ -308,11 +315,11 @@ router.post('/send', async (req: Request, res: Response) => {
 router.post('/send-single', async (req: Request, res: Response) => {
   try {
     const { phone, name, messageType, templateName, customMessage, agentId } = req.body;
-
+    
     if (!phone) {
       return res.status(400).json({ error: 'Phone number is required' });
     }
-
+    
     if (!messageType) {
       return res.status(400).json({ error: 'Message type is required' });
     }
@@ -322,7 +329,7 @@ router.post('/send-single', async (req: Request, res: Response) => {
       customMessage,
       agentId,
     });
-
+    
     res.json(result);
   } catch (error) {
     console.error('Single message send error:', error);
@@ -334,11 +341,11 @@ router.post('/send-to-list/:listId', async (req: Request, res: Response) => {
   try {
     const { messageType, templateName, customMessage, agentId, campaignName } = req.body;
     const list = await broadcastService.getBroadcastListById(req.params.listId);
-
+    
     if (!list) {
       return res.status(404).json({ error: 'List not found' });
     }
-
+    
     if (!messageType) {
       return res.status(400).json({ error: 'Message type is required' });
     }
@@ -349,7 +356,7 @@ router.post('/send-to-list/:listId', async (req: Request, res: Response) => {
       agentId,
       campaignName,
     });
-
+    
     res.json(result);
   } catch (error) {
     console.error('List broadcast send error:', error);

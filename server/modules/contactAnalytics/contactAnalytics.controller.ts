@@ -83,7 +83,7 @@ router.post('/analyze-all', async (req: Request, res: Response) => {
     const chats = await storage.getChats();
     const contactAgents = await mongodb.readCollection<any>('contact_agents');
     
-    //console.log(`[ContactAnalytics] Analyzing ${chats.length} chats, ${contactAgents.length} agent assignments`);
+    console.log(`[ContactAnalytics] Analyzing ${chats.length} chats, ${contactAgents.length} agent assignments`);
     
     const results = [];
     let processed = 0;
@@ -92,13 +92,13 @@ router.post('/analyze-all', async (req: Request, res: Response) => {
     for (const chat of chats) {
       try {
         if (!chat.contact) {
-          //console.log(`[ContactAnalytics] Chat ${chat.id} has no contact, skipping`);
+          console.log(`[ContactAnalytics] Chat ${chat.id} has no contact, skipping`);
           continue;
         }
         
         const contactPhone = (chat.contact.phone || '').replace(/\D/g, '') || '';
         if (!contactPhone) {
-          //console.log(`[ContactAnalytics] Chat ${chat.id} has no phone, skipping`);
+          console.log(`[ContactAnalytics] Chat ${chat.id} has no phone, skipping`);
           continue;
         }
         
@@ -139,7 +139,7 @@ router.post('/analyze-all', async (req: Request, res: Response) => {
           );
           
           processed++;
-          //console.log(`[ContactAnalytics] Processing ${contactPhone} with ${conversationMessages.length} messages`);
+          console.log(`[ContactAnalytics] Processing ${contactPhone} with ${conversationMessages.length} messages`);
           
           const report = await contactAnalyticsService.analyzeAndUpdateContact(
             chat.contact.id || chat.contactId,
@@ -156,7 +156,7 @@ router.post('/analyze-all', async (req: Request, res: Response) => {
             interestScore: report.interestScore,
           });
         } else {
-          //console.log(`[ContactAnalytics] Chat ${chat.id} has no messages, skipping`);
+          console.log(`[ContactAnalytics] Chat ${chat.id} has no messages, skipping`);
         }
       } catch (err) {
         errors++;
@@ -164,7 +164,7 @@ router.post('/analyze-all', async (req: Request, res: Response) => {
       }
     }
     
-    //console.log(`[ContactAnalytics] Completed: processed=${processed}, results=${results.length}, errors=${errors}`);
+    console.log(`[ContactAnalytics] Completed: processed=${processed}, results=${results.length}, errors=${errors}`);
     
     res.json({
       analyzed: results.length,
