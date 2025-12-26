@@ -305,7 +305,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       subItems: [
         { label: "Billing & Credits", href: "/settings/billing" },
         { label: "Spending", href: "/reports/spending" },
-        { label: "Contact Usage Dashboard", href: "/contactusagedashboard" },
+        // { label: "Contact Usage Dashboard", href: "/contactusagedashboard" },
         { label: "AI Tokens", href: "/aitokens" },
         { label: "Whatsapp Tokens", href: "/whatsapptokens" },
       ],

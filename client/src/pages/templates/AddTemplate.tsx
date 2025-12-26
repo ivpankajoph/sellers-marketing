@@ -507,7 +507,7 @@ export default function AddTemplate() {
           </div>
 
           <div className="space-y-4">
-            <Card>
+            {/* <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Info className="h-4 w-4" />
@@ -536,7 +536,7 @@ export default function AddTemplate() {
                   <span>Buttons: max 3, text ≤ 30 chars</span>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
 
             <Card>
               <CardHeader>
