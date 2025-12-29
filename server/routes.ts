@@ -37,7 +37,7 @@ import * as contactAgentService from "./modules/contactAgent/contactAgent.servic
 import * as leadManagementService from "./modules/leadManagement/leadManagement.service";
 import flowHandler from "./modules/facebook/fb.routes.ts";
 import axios from "axios";
-import { getForms, processLeads } from "./worker.ts";
+import { syncLeadsForFormMain } from "./worker.ts";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -47,60 +47,165 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  const FB_API_VERSION = "v17.0";
+  const FB_PAGE_ID = process.env.FB_PAGE_ID;
+  const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
+
   app.get("/api/forms", async (req, res) => {
-    const PAGE_ID = "118584934681142"; // From your curl
     try {
-      const fbForms = await getForms(PAGE_ID);
+      // Fetch forms from Facebook
+      const fbResponse = await axios.get(
+        `https://graph.facebook.com/${FB_API_VERSION}/${FB_PAGE_ID}/leadgen_forms?access_token=${FB_ACCESS_TOKEN}`
+      );
 
-      // Fetch saved triggers to show which form has which template selected
-      const triggers = await mongodb.Trigger.find({});
+      const fbForms = fbResponse.data.data || [];
 
-      const result = fbForms.map((form) => {
-        const trigger = triggers.find((t) => t.form_id === form.id);
-        return {
-          ...form,
-          assigned_template: trigger ? trigger.template_id : null,
-          is_active: trigger ? trigger.isActive : false,
-        };
+      // Get automation status from database
+      const automations = await mongodb.FormAutomation.find();
+      const automationMap: Record<string, any> = {};
+
+      automations.forEach((auto) => {
+        automationMap[auto.form_id] = auto;
       });
 
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      // Merge data
+      const forms = fbForms.map(
+        (form: { id: string | number; name: any; status: any }) => ({
+          id: form.id,
+          name: form.name,
+          status: form.status,
+          assigned_template: automationMap[form.id]?.template_id || null,
+          automation_active: automationMap[form.id]?.automation_active || false,
+          last_sync: automationMap[form.id]?.last_sync || null,
+        })
+      );
+
+      res.json(forms);
+    } catch (error: any) {
+      console.error("Error fetching forms:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/set-trigger", async (req, res) => {
-    const { form_id, form_name, template_id, template_name } = req.body;
+    try {
+      const { form_id, form_name, template_id, template_name } = req.body;
 
-    await mongodb.Trigger.findOneAndUpdate(
-      { form_id },
-      { form_id, form_name, template_id, template_name, isActive: true },
-      { upsert: true, new: true }
-    );
+      await mongodb.FormAutomation.findOneAndUpdate(
+        { form_id },
+        {
+          form_id,
+          form_name,
+          template_id,
+          template_name,
+          updated_at: new Date(),
+        },
+        { upsert: true, new: true }
+      );
 
-    // Optional: Trigger a check immediately
-    processLeads();
+      res.json({ success: true, message: "Template assigned successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
-    res.json({ success: true });
+  app.post("/api/toggle-form-automation", async (req, res) => {
+    try {
+      const { form_id, is_active } = req.body;
+
+      const automation = await mongodb.FormAutomation.findOne({ form_id });
+
+      if (!automation) {
+        return res.status(404).json({
+          error: "Form automation not found. Please assign a template first.",
+        });
+      }
+
+      automation.automation_active = is_active;
+      automation.updated_at = new Date();
+
+      // If starting automation, run initial sync immediately
+      if (is_active) {
+        automation.last_sync = new Date();
+        await automation.save();
+
+        // Run sync in background
+        syncLeadsForFormMain(automation).catch((err) => {
+          console.error("Error in initial sync:", err);
+        });
+
+        res.json({
+          success: true,
+          message: "Automation started. Initial sync in progress...",
+          automation_active: true,
+        });
+      } else {
+        await automation.save();
+        res.json({
+          success: true,
+          message: "Automation stopped",
+          automation_active: false,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/status", async (req, res) => {
+    try {
+      const activeCount = await mongodb.FormAutomation.countDocuments({
+        automation_active: true,
+      });
+      res.json({
+        is_running: activeCount > 0,
+        active_automations: activeCount,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // 4. Control (Stop/Start Sync)
   app.post("/api/control", async (req, res) => {
-    const { run } = req.body; // true or false
-    await mongodb.SystemConfig.findOneAndUpdate(
-      { key: "scheduler_config" },
-      { is_running: run },
-      { upsert: true }
-    );
-    res.json({ status: run ? "Running" : "Stopped" });
+    try {
+      const { run } = req.body;
+
+      // Update all automations
+      await mongodb.FormAutomation.updateMany(
+        {},
+        { automation_active: run, updated_at: new Date() }
+      );
+
+      res.json({ success: true, is_running: run });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
-  // 5. Get System Status
-  app.get("/api/status", async (req, res) => {
-    const config = await mongodb.SystemConfig.findOne({ key: "scheduler_config" });
-    res.json({ is_running: config ? config.is_running : true });
-  });
+
+  app.post('/api/sync-form/:formId', async (req, res) => {
+  try {
+    const automation = await mongodb.FormAutomation.findOne({ form_id: req.params.formId });
+    
+    if (!automation) {
+      return res.status(404).json({ error: 'Form automation not found' });
+    }
+    
+    const result = await syncLeadsForFormMain(automation);
+    res.json({ success: true, ...result });
+  } catch (error:any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+  // // 5. Get System Status
+  // app.get("/api/status", async (req, res) => {
+  //   const config = await mongodb.SystemConfig.findOne({
+  //     key: "scheduler_config",
+  //   });
+  //   res.json({ is_running: config ? config.is_running : true });
+  // });
 
   app.get("/api/users/all", async (req, res) => {
     try {

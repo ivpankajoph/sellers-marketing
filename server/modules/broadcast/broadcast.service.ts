@@ -52,6 +52,10 @@ export interface ScheduledBroadcast {
 }
 
 export interface SendMessageResult {
+  error_code: unknown;
+  template_name: any;
+  template_name: unknown;
+  phone_number: unknown;
   success: boolean;
   messageId?: string;
   error?: string;
@@ -195,7 +199,7 @@ export async function sendCustomMessage(phone: string, message: string): Promise
   }
 
   const formattedPhone = formatPhoneNumber(phone);
-  console.log(`[CustomMessage] Sending to ${formattedPhone}: "${message.substring(0, 50)}..."`);
+  //console.log(`[CustomMessage] Sending to ${formattedPhone}: "${message.substring(0, 50)}..."`);
 
   try {
     const response = await fetch(
@@ -219,7 +223,7 @@ export async function sendCustomMessage(phone: string, message: string): Promise
     const data = await response.json();
     
     if (response.ok && data.messages?.[0]?.id) {
-      console.log(`[CustomMessage] Successfully sent to ${formattedPhone}`);
+      //console.log(`[CustomMessage] Successfully sent to ${formattedPhone}`);
       return { success: true, messageId: data.messages[0].id };
     } else {
       const errorMsg = data.error?.message || 'Failed to send message';
@@ -248,7 +252,7 @@ export async function sendAIAgentMessage(phone: string, agentId: string, context
     return { success: false, error: 'Agent not found' };
   }
 
-  console.log(`[AIAgent] Generating message with agent "${agent.name}" (model: ${agent.model || 'default'}) for ${phone}`);
+  //console.log(`[AIAgent] Generating message with agent "${agent.name}" (model: ${agent.model || 'default'}) for ${phone}`);
   
   const prompt = context || 'Generate a friendly welcome message for a new contact. Keep it under 160 characters.';
   const aiMessage = await aiService.generateAgentResponse(prompt, agent, []);
@@ -258,12 +262,12 @@ export async function sendAIAgentMessage(phone: string, agentId: string, context
     return { success: false, error: 'Failed to generate AI message. Check if API key is configured for the agent model.' };
   }
 
-  console.log(`[AIAgent] AI generated: "${aiMessage.substring(0, 100)}..."`);
+  //console.log(`[AIAgent] AI generated: "${aiMessage.substring(0, 100)}..."`);
 
   const customResult = await sendCustomMessage(phone, aiMessage);
   
   if (!customResult.success && (customResult.error?.includes('24') || customResult.error?.includes('window'))) {
-    console.log('[AIAgent] Custom message failed (outside 24-hour window), falling back to hello_world template');
+    //console.log('[AIAgent] Custom message failed (outside 24-hour window), falling back to hello_world template');
     return await templateService.sendHelloWorldTemplate(formatPhoneNumber(phone));
   }
   
@@ -293,7 +297,7 @@ export async function logBroadcastMessage(log: Omit<BroadcastLog, 'id'>): Promis
   };
   try {
     const result = await mongodb.insertOne('broadcast_logs', newLog);
-    console.log(`[BroadcastLog] Saved log for ${log.contactPhone}: ${log.status}`);
+    //console.log(`[BroadcastLog] Saved log for ${log.contactPhone}: ${log.status}`);
     return result || newLog;
   } catch (error) {
     console.error('[BroadcastLog] Failed to save log:', error);
@@ -304,10 +308,10 @@ export async function logBroadcastMessage(log: Omit<BroadcastLog, 'id'>): Promis
 export async function markBroadcastLogAsReplied(phone: string): Promise<number> {
   try {
     const normalizedPhone = phone.replace(/\D/g, '');
-    console.log(`[BroadcastLog] Looking for broadcast logs to mark as replied for phone: ${normalizedPhone}`);
+    //console.log(`[BroadcastLog] Looking for broadcast logs to mark as replied for phone: ${normalizedPhone}`);
     
     const logs = await mongodb.readCollection<BroadcastLog>('broadcast_logs');
-    console.log(`[BroadcastLog] Found ${logs.length} total broadcast logs`);
+    //console.log(`[BroadcastLog] Found ${logs.length} total broadcast logs`);
     
     let updatedCount = 0;
     const now = new Date().toISOString();
@@ -323,7 +327,7 @@ export async function markBroadcastLogAsReplied(phone: string): Promise<number> 
                           normalizedPhone.includes(logPhone);
       
       if (phoneMatches && !log.replied) {
-        console.log(`[BroadcastLog] Phone match found! Log phone: ${logPhone}, Incoming: ${normalizedPhone}`);
+        //console.log(`[BroadcastLog] Phone match found! Log phone: ${logPhone}, Incoming: ${normalizedPhone}`);
         
         const updateResult = await mongodb.updateOne('broadcast_logs', { id: log.id }, { 
           replied: true, 
@@ -332,14 +336,14 @@ export async function markBroadcastLogAsReplied(phone: string): Promise<number> 
         
         if (updateResult) {
           updatedCount++;
-          console.log(`[BroadcastLog] Successfully marked as replied: ${log.id} (${log.contactPhone})`);
+          //console.log(`[BroadcastLog] Successfully marked as replied: ${log.id} (${log.contactPhone})`);
         } else {
-          console.log(`[BroadcastLog] Failed to update log: ${log.id}`);
+          //console.log(`[BroadcastLog] Failed to update log: ${log.id}`);
         }
       }
     }
     
-    console.log(`[BroadcastLog] Total logs marked as replied: ${updatedCount}`);
+    //console.log(`[BroadcastLog] Total logs marked as replied: ${updatedCount}`);
     return updatedCount;
   } catch (error) {
     console.error('[BroadcastLog] Error marking as replied:', error);
@@ -356,7 +360,7 @@ export async function getBroadcastLogs(filters?: {
 }): Promise<BroadcastLog[]> {
   try {
     let logs = await mongodb.readCollection<BroadcastLog>('broadcast_logs');
-    console.log(`[BroadcastLogs] Fetched ${logs.length} logs from MongoDB`);
+    //console.log(`[BroadcastLogs] Fetched ${logs.length} logs from MongoDB`);
     
     if (filters) {
       if (filters.campaignName) {
@@ -398,8 +402,8 @@ export async function sendBroadcast(
   // Handle scheduled broadcasts
   if (options.isScheduled && options.scheduledTime) {
     const scheduledDate = new Date(options.scheduledTime);
-    console.log(`[Broadcast] Scheduling broadcast for ${scheduledDate.toISOString()}`);
-    console.log(`[Broadcast] Contacts: ${contacts.length}, MessageType: ${messageType}, CampaignName: ${campaignName}`);
+    //console.log(`[Broadcast] Scheduling broadcast for ${scheduledDate.toISOString()}`);
+    //console.log(`[Broadcast] Contacts: ${contacts.length}, MessageType: ${messageType}, CampaignName: ${campaignName}`);
     
     // Store the scheduled broadcast
     const scheduleData: ScheduledBroadcast = {
@@ -415,9 +419,9 @@ export async function sendBroadcast(
       createdAt: new Date().toISOString(),
     };
     
-    console.log(`[Broadcast] Saving scheduled broadcast:`, JSON.stringify(scheduleData, null, 2));
+    //console.log(`[Broadcast] Saving scheduled broadcast:`, JSON.stringify(scheduleData, null, 2));
     await mongodb.insertOne('scheduled_broadcasts', scheduleData);
-    console.log(`[Broadcast] Scheduled broadcast saved successfully with ID: ${scheduleData.id}`);
+    //console.log(`[Broadcast] Scheduled broadcast saved successfully with ID: ${scheduleData.id}`);
     
     return {
       total: contacts.length,
@@ -433,8 +437,8 @@ export async function sendBroadcast(
   let successful = 0;
   let failed = 0;
 
-  console.log(`[Broadcast] Starting broadcast to ${contacts.length} contacts`);
-  console.log(`[Broadcast] Campaign: ${campaignName}, Type: ${messageType}`);
+  //console.log(`[Broadcast] Starting broadcast to ${contacts.length} contacts`);
+  //console.log(`[Broadcast] Campaign: ${campaignName}, Type: ${messageType}`);
   
   // Check WhatsApp credentials before starting
   const credentials = getWhatsAppCredentials();
@@ -492,16 +496,16 @@ export async function sendBroadcast(
 
     if (result.success) {
       successful++;
-      console.log(`[Broadcast] Sent to ${contact.phone} (${contact.name})`);
+      //console.log(`[Broadcast] Sent to ${contact.phone} (${contact.name})`);
     } else {
       failed++;
-      console.log(`[Broadcast] Failed for ${contact.phone}: ${result.error}`);
+      //console.log(`[Broadcast] Failed for ${contact.phone}: ${result.error}`);
     }
 
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  console.log(`[Broadcast] Complete: ${successful} successful, ${failed} failed`);
+  //console.log(`[Broadcast] Complete: ${successful} successful, ${failed} failed`);
 
   return {
     total: contacts.length,
@@ -554,7 +558,7 @@ export function parseExcelContacts(data: unknown[]): ParseResult {
     
     // Log column names for first row
     if (rowNum === 2) {
-      console.log(`[ParseExcel] Detected columns: ${keys.join(', ')}`);
+      //console.log(`[ParseExcel] Detected columns: ${keys.join(', ')}`);
     }
     
     // Check all possible name column variations (case insensitive)
@@ -636,9 +640,9 @@ export function parseExcelContacts(data: unknown[]): ParseResult {
     });
   }
   
-  console.log(`[ParseExcel] Parsed ${contacts.length} valid contacts from ${data.length} rows`);
+  //console.log(`[ParseExcel] Parsed ${contacts.length} valid contacts from ${data.length} rows`);
   if (errors.length > 0) {
-    console.log(`[ParseExcel] Errors: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? '...' : ''}`);
+    //console.log(`[ParseExcel] Errors: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? '...' : ''}`);
   }
   
   return {
@@ -713,7 +717,7 @@ export async function saveImportedContacts(contacts: BroadcastContact[], source:
       }
     }
     
-    console.log(`[ImportContacts] Saved ${saved} new contacts, ${duplicates} duplicates skipped (batch mode)`);
+    //console.log(`[ImportContacts] Saved ${saved} new contacts, ${duplicates} duplicates skipped (batch mode)`);
   } catch (error) {
     console.error('[ImportContacts] Bulk import failed:', error);
     errors.push(`Bulk import failed: ${error}`);
@@ -754,7 +758,7 @@ export async function getScheduledBroadcasts(): Promise<ScheduledBroadcast[]> {
 
 export async function processScheduledBroadcasts(): Promise<void> {
   const now = new Date();
-  console.log(`[Scheduler] Checking for due broadcasts at ${now.toISOString()}`);
+  // //console.log(`[Scheduler] Checking for due broadcasts at ${now.toISOString()}`);
   
   try {
     const scheduled = await mongodb.readCollection<ScheduledBroadcast>('scheduled_broadcasts');
@@ -766,10 +770,10 @@ export async function processScheduledBroadcasts(): Promise<void> {
       return;
     }
     
-    console.log(`[Scheduler] Found ${duebroadcasts.length} due broadcasts`);
+    // //console.log(`[Scheduler] Found ${duebroadcasts.length} due broadcasts`);
     
     for (const broadcast of duebroadcasts) {
-      console.log(`[Scheduler] Processing broadcast: ${broadcast.id} - ${broadcast.campaignName}`);
+      // //console.log(`[Scheduler] Processing broadcast: ${broadcast.id} - ${broadcast.campaignName}`);
       
       // Update status to sending
       await mongodb.updateOne('scheduled_broadcasts', { id: broadcast.id }, { 
@@ -843,7 +847,7 @@ export async function processScheduledBroadcasts(): Promise<void> {
         failedCount: failed,
       });
       
-      console.log(`[Scheduler] Broadcast ${broadcast.id} complete: ${successful} sent, ${failed} failed`);
+      //console.log(`[Scheduler] Broadcast ${broadcast.id} complete: ${successful} sent, ${failed} failed`);
     }
   } catch (error) {
     console.error('[Scheduler] Error processing scheduled broadcasts:', error);
@@ -857,7 +861,7 @@ export function startScheduler(): void {
   if (schedulerInterval) {
     return;
   }
-  console.log('[Scheduler] Starting broadcast scheduler (checking every 30 seconds)');
+  //console.log('[Scheduler] Starting broadcast scheduler (checking every 30 seconds)');
   schedulerInterval = setInterval(processScheduledBroadcasts, 30000);
   // Run immediately on start
   processScheduledBroadcasts();
@@ -867,7 +871,7 @@ export function stopScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    console.log('[Scheduler] Broadcast scheduler stopped');
+    //console.log('[Scheduler] Broadcast scheduler stopped');
   }
 }
 
@@ -889,7 +893,7 @@ export async function cancelScheduledBroadcast(id: string): Promise<boolean> {
       status: 'cancelled',
     });
     
-    console.log(`[ScheduledBroadcast] Cancelled broadcast: ${id}`);
+    //console.log(`[ScheduledBroadcast] Cancelled broadcast: ${id}`);
     return true;
   } catch (error) {
     console.error('[ScheduledBroadcast] Failed to cancel broadcast:', error);
@@ -906,7 +910,7 @@ export async function deleteScheduledBroadcast(id: string): Promise<boolean> {
     }
     
     await mongodb.deleteOne('scheduled_broadcasts', { id });
-    console.log(`[ScheduledBroadcast] Deleted broadcast: ${id}`);
+    //console.log(`[ScheduledBroadcast] Deleted broadcast: ${id}`);
     return true;
   } catch (error) {
     console.error('[ScheduledBroadcast] Failed to delete broadcast:', error);

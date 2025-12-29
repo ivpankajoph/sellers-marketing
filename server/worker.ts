@@ -1,136 +1,586 @@
-import { Lead, SystemConfig, Trigger } from "./modules/storage/mongodb.adapter";
+import {
+  FormAutomation,
+  Lead,
+  Leadfb,
+  SystemConfig,
+  Template,
+  Trigger,
+} from "./modules/storage/mongodb.adapter";
 import axios, { AxiosError } from "axios";
+import cron from "node-cron";
+import { Types } from "mongoose";
+import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
-const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN; // Store in .env
+const FB_API_VERSION = "v17.0";
+const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
+const SYSTEM_USER_TOKEN_META = process.env.SYSTEM_USER_TOKEN_META;
 
-if (!FB_ACCESS_TOKEN) {
-  throw new Error("FB_ACCESS_TOKEN is required but not defined in environment variables.");
-}
+// WhatsApp Cloud API Configuration
+const WHATSAPP_API_VERSION = "v22.0";
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WABA_ID;
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 
-// Facebook API response types
-interface FbPagedResponse<T> {
-  data: T[];
-  paging?: {
-    cursors?: { before?: string; after?: string };
-    next?: string;
-  };
-}
-
-// Helper to fetch all pages recursively
-export async function fetchAllData<T>(url: string, accumulatedData: T[] = []): Promise<T[]> {
+// One-time migration: Mark all existing leads as template_sent = true
+export async function migrateExistingLeads() {
   try {
-    const response = await axios.get<FbPagedResponse<T>>(url);
-    const { data, paging } = response.data;
-    const newData = [...accumulatedData, ...data];
+    const result = await Leadfb.updateMany(
+      { template_sent: { $ne: true } }, // Find leads where template_sent is not true
+      { $set: { template_sent: true } }
+    );
+    console.log(`Migrated ${result.modifiedCount} existing leads to template_sent: true`);
+  } catch (error: any) {
+    console.error("Error migrating existing leads:", error.message);
+  }
+}
 
-    if (paging?.next) {
-      console.log('Fetching next page...');
-      // return fetchAllData(paging.next, newData);
+
+
+async function fetchAllLeadsFromFacebook(formId: any) {
+  let allLeads: any = [];
+  let url = `https://graph.facebook.com/${FB_API_VERSION}/${formId}/leads?access_token=${FB_ACCESS_TOKEN}&limit=100`;
+
+  while (url) {
+    try {
+      const response = await axios.get(url);
+      const data = response.data;
+
+      allLeads = allLeads.concat(data.data || []);
+
+      // Check for next page
+      url = data.paging?.cursors?.after
+        ? `https://graph.facebook.com/${FB_API_VERSION}/${formId}/leads?access_token=${FB_ACCESS_TOKEN}&limit=100&after=${data.paging.cursors.after}`
+        : "";
+    } catch (error: any) {
+      console.error(`Error fetching leads for form ${formId}:`, error.message);
+      break;
     }
-    return newData;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error("Error fetching FB data:", message);
-    return accumulatedData;
-  }
-}
-
-// 1. Fetch Forms
-export async function getForms(pageId: string): Promise<any[]> {
-  const url = `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?access_token=${FB_ACCESS_TOKEN}&limit=50`;
-  return await fetchAllData(url);
-}
-
-// 2. Fetch Leads for a specific Form
-async function getLeadsForForm(formId: string): Promise<any[]> {
-  const url = `https://graph.facebook.com/v18.0/${formId}/leads?access_token=${FB_ACCESS_TOKEN}&limit=50`;
-  return await fetchAllData(url);
-}
-
-// Optional: Define a type for lead field data if needed
-interface LeadField {
-  name: string;
-  values: string[];
-}
-
-interface FbLead {
-  id: string;
-  created_time: string;
-  field_data?: LeadField[];
-}
-
-// 3. Send WhatsApp Template (placeholder implementation)
-async function sendWhatsAppTemplate(phone: string, templateId: string, leadData: { name?: string }): Promise<boolean> {
-  // IMPLEMENT YOUR WHATSAPP API LOGIC HERE (e.g., Meta Cloud API, Twilio)
-  console.log(`[WHATSAPP] Sending template ${templateId} to ${phone}`);
-  // Example:
-  // await axios.post('https://graph.facebook.com/v18.0/PHONE_ID/messages', { ... }, { headers: { ... } });
-  return true;
-}
-
-// Main processor
-export async function processLeads(): Promise<void> {
-  // 1. Check if system is stopped
-  const config = await SystemConfig.findOne({ key: 'scheduler_config' });
-  if (config && !config.is_running) {
-    console.log("Sync is manually stopped.");
-    return;
   }
 
-  console.log("Starting 10-minute Lead Check...");
+  return allLeads;
+}
 
-  // 2. Get all Active Triggers (Forms that have a template assigned)
-  const triggers = await Trigger.find({ isActive: true, template_id: { $ne: null } });
+function normalizeLead(
+  fbLead: { id: any; created_time: string | number | Date; field_data: any[] },
+  formId: any,
+  formName: any,
+  templateId: any,
+  templateName: any
+) {
+  const normalized: any = {
+    lead_id: fbLead.id,
+    form_id: formId,
+    form_name: formName,
+    created_time: new Date(fbLead.created_time),
+    template_sent: false, // Always start as false for new leads
+    automation_active: true,
+    template_id: templateId,
+    template_name: templateName,
+    raw_field_data: fbLead.field_data,
+  };
 
-  for (const trigger of triggers) {
-    console.log(`Checking leads for Form: ${trigger.form_name} (${trigger.form_id})`);
+  // Parse field_data
+  fbLead.field_data?.forEach((field) => {
+    const key = field.name;
+    const value = field.values?.[0] || "";
 
-    // 3. Fetch all leads for this form from FB
-    const fbLeads: FbLead[] = await getLeadsForForm(trigger.form_id);
+    if (key === "full_name" || key === "FULL_NAME") {
+      normalized.full_name = value;
+    } else if (key === "email" || key === "EMAIL") {
+      normalized.email = value;
+    } else if (key === "phone_number" || key === "PHONE") {
+      normalized.phone = value;
+    } else if (key === "date_of_birth" || key === "DOB") {
+      normalized.dob = value;
+    } else if (key === "0") {
+      normalized.category = value;
+    } else if (key === "1") {
+      normalized.opt_in = value;
+    }
+  });
 
-    for (const fbLead of fbLeads) {
-      // 4. Check if lead already exists in MongoDB
-      const exists = await Lead.findOne({ lead_id: fbLead.id });
+  return normalized;
+}
 
-      if (!exists) {
-        // --- NEW LEAD FOUND ---
+// Fetch template details from WhatsApp Business API
+async function getTemplateDetails(templateId: string) {
+  try {
+    console.log("🔍 Fetching template from DB:", templateId);
 
-        // Extract basic info from field_data
-        const fieldData = fbLead.field_data || [];
-        const getVal = (name: string): string => {
-          const field = fieldData.find(f => f.name === name);
-          return field?.values[0] || "";
-        };
+    const template = await Template.findOne({
+      $or: [
+        { id: templateId },     // Meta template ID
+        { name: templateId },   // template name
+      ],
+    }).lean();
 
-        const phone = getVal("PHONE") || getVal("phone_number");
-        const name = getVal("FULL_NAME") || getVal("full_name");
+    if (!template) {
+      console.error("❌ Template not found in DB:", templateId);
+      return null;
+    }
 
-        // 5. Send WhatsApp
-        let sentStatus = false;
-        if (phone && trigger.template_id) {
-          try {
-            // await sendWhatsAppTemplate(phone, trigger.template_id, { name });
-            sentStatus = true;
-          } catch (err) {
-            console.error("Failed to send WhatsApp", err);
-          }
+    // Validation checks (important)
+    if (
+      template.metaStatus !== "APPROVED" &&
+      template.status !== "approved"
+    ) {
+      console.warn(
+        `⚠️ Template found but not approved: ${template.name}`,
+        {
+          status: template.status,
+          metaStatus: template.metaStatus,
         }
+      );
+      return null;
+    }
 
-        // 6. Save to MongoDB
-        await Lead.create({
-          lead_id: fbLead.id,
-          form_id: trigger.form_id,
-          full_name: name,
-          email: getVal("EMAIL") || getVal("email"),
-          phone: phone,
-          raw_data: fbLead,
-          created_time: fbLead.created_time,
-          template_sent: sentStatus,
+    console.log("✅ Template loaded from DB:", {
+      name: template.name,
+      language: template.language,
+      category: template.category,
+    });
+
+    return {
+      id: template.id,
+      name: template.name,
+      language: template.language,
+      status: template.metaStatus || template.status,
+      components: [
+        {
+          type: "BODY",
+          text: template.content,
+        },
+      ],
+      raw: template, // keep full DB object if needed
+    };
+  } catch (error: any) {
+    console.error("🔥 Error fetching template from DB:", error.message);
+    return null;
+  }
+}
+
+
+// Build template parameters dynamically based on template structure
+function buildTemplateParameters(template: any, lead: any) {
+  const components: any[] = [];
+
+  // Process each component in the template
+  template.components?.forEach((component: any) => {
+    if (component.type === "HEADER" && component.format === "TEXT") {
+      // Check if header has variables
+      const headerText = component.text || "";
+      const variableCount = (headerText.match(/\{\{(\d+)\}\}/g) || []).length;
+      
+      if (variableCount > 0) {
+        const parameters = [];
+        for (let i = 1; i <= variableCount; i++) {
+          parameters.push({
+            type: "text",
+            text: lead.full_name || "Customer"
+          });
+        }
+        components.push({
+          type: "header",
+          parameters: parameters
         });
-
-        console.log(`New Lead Saved & Msg Sent: ${name}`);
       }
     }
+
+    if (component.type === "BODY") {
+      // Extract variables from body text
+      const bodyText = component.text || "";
+      const variableCount = (bodyText.match(/\{\{(\d+)\}\}/g) || []).length;
+      
+      if (variableCount > 0) {
+        const parameters = [];
+        
+        // Map variables to lead data
+        for (let i = 1; i <= variableCount; i++) {
+          let value = "Customer";
+          
+          // You can customize this mapping based on your template structure
+          switch (i) {
+            case 1:
+              value = lead.full_name || "Customer";
+              break;
+            case 2:
+              value = lead.category || lead.email || "";
+              break;
+            case 3:
+              value = lead.phone || "";
+              break;
+            case 4:
+              value = lead.dob || "";
+              break;
+            default:
+              value = "";
+          }
+          
+          parameters.push({
+            type: "text",
+            text: value
+          });
+        }
+        
+        components.push({
+          type: "body",
+          parameters: parameters
+        });
+      }
+    }
+
+    // Handle BUTTONS component if needed (for dynamic URLs)
+    if (component.type === "BUTTONS") {
+      component.buttons?.forEach((button: any, index: number) => {
+        if (button.type === "URL" && button.url?.includes("{{")) {
+          components.push({
+            type: "button",
+            sub_type: "url",
+            index: index.toString(),
+            parameters: [
+              {
+                type: "text",
+                text: lead.lead_id || "" // or any dynamic value
+              }
+            ]
+          });
+        }
+      });
+    }
+  });
+
+  return components;
+}
+
+// Send WhatsApp Template Message using form's assigned template
+async function sendWhatsAppTemplate(lead: any, templateId: string) {
+  try {
+    // Validate phone number
+    if (!lead.phone) {
+      console.error(`No phone number for lead ${lead.lead_id}`);
+      return { success: false, error: "No phone number" };
+    }
+
+    // Clean phone number (remove spaces, dashes, etc.)
+    let phoneNumber = lead.phone.replace(/[\s\-\(\)]/g, "");
+    
+    // Add country code if not present (assuming India +91, modify as needed)
+    if (!phoneNumber.startsWith("+")) {
+      phoneNumber = "+91" + phoneNumber;
+    }
+
+    // Fetch template details from WhatsApp API
+    console.log(`Fetching template details for: ${templateId}`);
+    const template = await getTemplateDetails(templateId);
+    
+    if (!template) {
+      return { success: false, error: `Template not found: ${templateId}` };
+    }
+
+    console.log(`Using template: ${template.name} (${template.language})`);
+
+    // Build dynamic parameters based on template structure
+    const components = buildTemplateParameters(template, lead);
+
+    // Prepare template message payload
+    const payload: any = {
+      messaging_product: "whatsapp",
+      to: phoneNumber,
+      type: "template",
+      template: {
+        name: template.name,
+        language: {
+          code: template.language || "en"
+        }
+      }
+    };
+
+    // Add components only if there are parameters
+    if (components.length > 0) {
+      payload.template.components = components;
+    }
+
+    console.log(`Sending WhatsApp template "${template.name}" to ${phoneNumber}`);
+    console.log("Payload:", JSON.stringify(payload, null, 2));
+
+    const response = await axios.post(
+      `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      payload,
+      {
+        headers: {
+          "Authorization": `Bearer ${SYSTEM_USER_TOKEN_META}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    console.log(`✅ WhatsApp message sent successfully to ${lead.full_name || phoneNumber}`);
+    console.log(`Message ID: ${response.data.messages?.[0]?.id}`);
+
+    return {
+      success: true,
+      message_id: response.data.messages?.[0]?.id,
+      phone_number: phoneNumber,
+      template_name: template.name
+    };
+
+  } catch (error: any) {
+    console.error(`❌ Error sending WhatsApp to ${lead.phone}:`, error.response?.data || error.message);
+    
+    return {
+      success: false,
+      error: error.response?.data?.error?.message || error.message,
+      error_code: error.response?.data?.error?.code
+    };
   }
-  console.log("Lead Check Complete.");
+}
+
+export async function syncLeadsForFormMain(formAutomation: any) {
+  try {
+    console.log(
+      `Syncing leads for form: ${formAutomation.form_name} (${formAutomation.form_id})`
+    );
+
+    // Fetch leads from Facebook
+    const fbLeads = await fetchAllLeadsFromFacebook(formAutomation.form_id);
+    console.log(`Fetched ${fbLeads.length} leads from Facebook`);
+
+    let newLeadsCount = 0;
+    let updatedLeadsCount = 0;
+    let templatesSentCount = 0;
+    let templatesFailedCount = 0;
+
+    // Process each lead
+    for (const fbLead of fbLeads) {
+      const normalizedLead = normalizeLead(
+        fbLead,
+        formAutomation.form_id,
+        formAutomation.form_name,
+        formAutomation.template_id,
+        formAutomation.template_name
+      );
+
+      // Check if lead already exists
+      const existingLead = await Leadfb.findOne({ lead_id: normalizedLead.lead_id });
+
+      if (!existingLead) {
+        // NEW LEAD - Save with template_sent: false
+        console.log(`🆕 New lead found: ${normalizedLead.full_name || normalizedLead.email}`);
+        
+        const newLead: any = await Leadfb.create({
+          ...normalizedLead,
+          template_sent: false,
+          synced_at: new Date(),
+        });
+
+        newLeadsCount++;
+
+        // Send WhatsApp template if phone number exists
+        if (newLead.phone && formAutomation.template_id) {
+          console.log(`📱 Sending WhatsApp template (${formAutomation.template_name}) to new lead...`);
+          
+          // Send the template that is assigned to THIS FORM
+          const result = await sendTemplateMessage(
+            newLead.phone,
+            formAutomation.template_name // Using template_id from the form's automation
+          );
+
+          if (result.success) {
+            // Update lead with template_sent: true and message details
+            await Leadfb.findByIdAndUpdate(newLead._id, {
+              template_sent: true,
+              template_sent_at: new Date(),
+              whatsapp_message_id: result.messageId,
+              whatsapp_phone_number: result.phone_number,
+              template_used: result.template_name
+            });
+            
+            templatesSentCount++;
+            console.log(`✅ Template "${result.template_name}" sent successfully and lead updated: template_sent = true`);
+          } else {
+            // Log the failure but keep template_sent as false
+            await Leadfb.findByIdAndUpdate(newLead._id, {
+              template_sent_error: result.error,
+              template_sent_error_code: result.error_code,
+              last_template_attempt: new Date()
+            });
+            
+            templatesFailedCount++;
+            console.log(`❌ Template send failed: ${result.error}`);
+          }
+        } else {
+          console.log(`⚠️ No phone number or template configured for form, skipping WhatsApp send`);
+        }
+
+      } else {
+        // EXISTING LEAD - Just update sync time, don't resend template
+        await Leadfb.findOneAndUpdate(
+          { lead_id: normalizedLead.lead_id },
+          {
+            synced_at: new Date(),
+            // Preserve existing template_sent status
+          }
+        );
+        updatedLeadsCount++;
+      }
+    }
+
+    // Update last sync time
+    formAutomation.last_sync = new Date();
+    formAutomation.last_sync_stats = {
+      new_leads: newLeadsCount,
+      updated_leads: updatedLeadsCount,
+      templates_sent: templatesSentCount,
+      templates_failed: templatesFailedCount,
+      total_leads: fbLeads.length
+    };
+    await formAutomation.save();
+
+    console.log(
+      `✨ Sync complete: ${newLeadsCount} new, ${updatedLeadsCount} updated, ${templatesSentCount} templates sent, ${templatesFailedCount} failed`
+    );
+    
+    return {
+      newLeadsCount,
+      updatedLeadsCount,
+      templatesSentCount,
+      templatesFailedCount,
+      totalLeads: fbLeads.length
+    };
+  } catch (error: any) {
+    console.error(
+      `Error syncing form ${formAutomation.form_id}:`,
+      error.message
+    );
+    throw error;
+  }
+}
+
+// Retry failed template sends (optional - run separately or on a schedule)
+export async function retryFailedTemplates() {
+  try {
+    console.log("🔁 Retrying failed template sends...");
+    const startTime = Date.now();
+
+    const failedLeads = await Leadfb.find({
+      template_sent: false,
+      phone: { $exists: true, $ne: "" },
+    }).limit(5);
+
+    console.log(
+      `📌 Found ${failedLeads.length} failed leads`,
+      failedLeads.map(l => ({
+        id: l._id,
+        phone: l.phone,
+        form_id: l.form_id,
+        error: l.template_sent_error,
+      }))
+    );
+
+    let retrySuccessCount = 0;
+    let retryFailCount = 0;
+
+    for (const lead of failedLeads) {
+      console.log(`➡️ Processing lead ${lead._id} | phone=${lead.phone}`);
+
+      const automation = await FormAutomation.findOne({
+        form_id: lead.form_id,
+      });
+
+      if (!automation) {
+        console.warn(
+          `⚠️ No automation found for form_id=${lead.form_id} (lead=${lead._id})`
+        );
+        retryFailCount++;
+        continue;
+      }
+
+      if (!automation.template_id) {
+        console.warn(
+          `⚠️ No template_id in automation for form_id=${lead.form_id} (lead=${lead._id})`
+        );
+        retryFailCount++;
+        continue;
+      }
+
+      console.log(
+        `📤 Sending WhatsApp template`,
+        {
+          leadId: lead._id,
+          templateId: automation.template_id,
+          phone: lead.phone,
+        }
+      );
+
+      const result = await sendTemplateMessage(
+        lead.phone,
+        automation.template_name
+      );
+
+      console.log(
+        `📨 WhatsApp response for lead ${lead._id}:`,
+        result
+      );
+
+      if (result.success) {
+        await Leadfb.findByIdAndUpdate(lead._id, {
+          template_sent: true,
+          template_sent_at: new Date(),
+          whatsapp_message_id: result.messageId,
+          whatsapp_phone_number: result.phone_number,
+          template_used: result.template_name,
+          $unset: {
+            template_sent_error: "",
+            template_sent_error_code: "",
+          },
+        });
+
+        console.log(
+          `✅ Template sent successfully for lead ${lead._id}`,
+          {
+            message_id: result.messageId,
+            template: result.template_name,
+          }
+        );
+
+        retrySuccessCount++;
+      } else {
+        await Leadfb.findByIdAndUpdate(lead._id, {
+          template_sent_error: result.error,
+          template_sent_error_code: result.error_code,
+          last_template_attempt: new Date(),
+        });
+
+        console.error(
+          `❌ Template send failed for lead ${lead._id}`,
+          {
+            error: result.error,
+            error_code: result.error_code,
+          }
+        );
+
+        retryFailCount++;
+      }
+    }
+
+    console.log(
+      `🏁 Retry complete`,
+      {
+        success: retrySuccessCount,
+        failed: retryFailCount,
+        duration_ms: Date.now() - startTime,
+      }
+    );
+
+    return { retrySuccessCount, retryFailCount };
+  } catch (error: any) {
+    console.error(
+      "🔥 Fatal error in retryFailedTemplates",
+      {
+        message: error.message,
+        stack: error.stack,
+      }
+    );
+    throw error;
+  }
 }

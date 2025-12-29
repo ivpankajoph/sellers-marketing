@@ -508,7 +508,50 @@ const UserActivityStatsSchema = new Schema({
   updatedAt: { type: String, required: true },
 }, { collection: 'user_activity_stats' });
 
+
+
+
+
 UserActivityStatsSchema.index({ userId: 1, date: -1 });
+
+
+
+const leadSchema_fb = new mongoose.Schema({
+  lead_id: { type: String, required: true, unique: true },
+  form_id: { type: String, required: true },
+  form_name: String,
+  created_time: Date,
+  full_name: String,
+  email: String,
+  phone: String,
+  dob: String,
+  category: String,
+  opt_in: String,
+  template_sent: { type: Boolean, default: false },
+  automation_active: { type: Boolean, default: true },
+  template_id: String,
+  template_name: String,
+  synced_at: { type: Date, default: Date.now },
+  raw_field_data: mongoose.Schema.Types.Mixed
+});
+
+
+const formAutomationSchema = new mongoose.Schema({
+  form_id: { type: String, required: true, unique: true },
+  form_name: String,
+  template_id: String,
+  template_name: String,
+  automation_active: { type: Boolean, default: false },
+  last_sync: Date,
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+});
+
+
+export const Leadfb = mongoose.models.Leadfb || mongoose.model('Leadfb', leadSchema_fb);
+export const FormAutomation = mongoose.models.FormAutomation || mongoose.model('FormAutomation', formAutomationSchema);
+
+
 
 export const Agent = mongoose.models.Agent || mongoose.model('Agent', AgentSchema);
 export const Form = mongoose.models.Form || mongoose.model('Form', FormSchema);
