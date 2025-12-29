@@ -69,7 +69,7 @@ app.use((req, res, next) => {
   await registerRoutes(httpServer, app);
 
   cron.schedule('*/10 * * * *', () => {
-  processLeads();
+  // processLeads();
 });
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

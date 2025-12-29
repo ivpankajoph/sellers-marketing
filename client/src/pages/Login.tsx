@@ -37,7 +37,7 @@ export default function Login() {
     }
   };
 
-  const API_URL = "https://ophmaarketing-579008086831.europe-west1.run.app/api";
+  const API_URL = "/api";
 
   const handleGoogleLogin = async () => {
     setLoading(true);

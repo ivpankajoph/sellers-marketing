@@ -25,7 +25,7 @@ export async function fetchAllData<T>(url: string, accumulatedData: T[] = []): P
 
     if (paging?.next) {
       console.log('Fetching next page...');
-      return fetchAllData(paging.next, newData);
+      // return fetchAllData(paging.next, newData);
     }
     return newData;
   } catch (error) {
@@ -109,7 +109,7 @@ export async function processLeads(): Promise<void> {
         let sentStatus = false;
         if (phone && trigger.template_id) {
           try {
-            await sendWhatsAppTemplate(phone, trigger.template_id, { name });
+            // await sendWhatsAppTemplate(phone, trigger.template_id, { name });
             sentStatus = true;
           } catch (err) {
             console.error("Failed to send WhatsApp", err);

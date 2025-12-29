@@ -39,7 +39,7 @@ export default function Register() {
     const [showCountryDropdown, setShowCountryDropdown] = useState(false);
     const [, setLocation] = useLocation();
 
-    const API_URL = "https://ophmaarketing-579008086831.europe-west1.run.app/api";
+    const API_URL = "/api";
 
     const passwordValidation = {
         minLength: password.length >= 6,
