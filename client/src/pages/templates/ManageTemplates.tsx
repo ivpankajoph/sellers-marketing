@@ -57,6 +57,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useRef } from "react";
 
 interface Template {
   id: string;
@@ -302,8 +303,28 @@ export default function ManageTemplates() {
     });
   };
 
+  const isSyncingRef = useRef(false);
+
   useEffect(() => {
-    syncMetaTemplatesMutation.mutate();
+    const sync = async () => {
+      if (isSyncingRef.current) return;
+
+      isSyncingRef.current = true;
+      try {
+        await syncMetaTemplatesMutation.mutateAsync();
+      } catch (err) {
+        // handled by mutation onError
+      } finally {
+        isSyncingRef.current = false;
+      }
+    };
+
+    // initial sync
+    sync();
+
+    const interval = setInterval(sync, 10000); 
+
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -453,7 +474,7 @@ export default function ManageTemplates() {
                         >
                           {template.metaStatus?.toLowerCase() ||
                             template.status}
-                        </Badge>  
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">

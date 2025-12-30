@@ -328,7 +328,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       pageId: "facebook-leads",
       subItems: [
         { label: "Lead Forms", href: "/facebook/forms" },
-        { label: "Leads", href: "/facebook/leads" },
+        // { label: "Leads", href: "/facebook/leads" },
       ],
     },
     {

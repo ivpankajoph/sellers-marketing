@@ -384,7 +384,8 @@ export async function syncLeadsForFormMain(formAutomation: any) {
             newLead.phone,
             formAutomation.template_name // Using template_id from the form's automation
           );
-
+          
+          
           if (result.success) {
             // Update lead with template_sent: true and message details
             await Leadfb.findByIdAndUpdate(newLead._id, {
@@ -394,7 +395,7 @@ export async function syncLeadsForFormMain(formAutomation: any) {
               whatsapp_phone_number: result.phone_number,
               template_used: result.template_name
             });
-            
+            console.log(`📨 WhatsApp message sent: Message ID ${result}`);
             templatesSentCount++;
             console.log(`✅ Template "${result.template_name}" sent successfully and lead updated: template_sent = true`);
           } else {
@@ -403,6 +404,7 @@ export async function syncLeadsForFormMain(formAutomation: any) {
               template_sent_error: result.error,
               template_sent_error_code: result.error_code,
               last_template_attempt: new Date()
+
             });
             
             templatesFailedCount++;

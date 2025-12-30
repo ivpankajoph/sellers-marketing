@@ -8,7 +8,11 @@ import {
 } from "./modules/storage/mongodb.adapter";
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
-import { migrateExistingLeads, retryFailedTemplates, syncLeadsForFormMain } from "./worker";
+import {
+  migrateExistingLeads,
+  retryFailedTemplates,
+  syncLeadsForFormMain,
+} from "./worker";
 
 const app = express();
 const httpServer = createServer(app);
@@ -72,10 +76,18 @@ app.use((req, res, next) => {
   await registerRoutes(httpServer, app);
   // await migrateExistingLeads();
 
+  let isRunning = false;
+
   cron.schedule("*/40 * * * * *", async () => {
-    console.log("🔄 Running scheduled sync for all active automations...");
+    if (isRunning) {
+      console.log("⏭ Skipping cron — previous run still in progress");
+      return;
+    }
+
+    isRunning = true;
 
     try {
+      console.log("🔄 Running scheduled sync...");
       const activeAutomations = await FormAutomation.find({
         automation_active: true,
       });
@@ -85,8 +97,10 @@ app.use((req, res, next) => {
       }
 
       console.log(`✅ Completed sync for ${activeAutomations.length} forms`);
-    } catch (error) {
-      console.error("❌ Error in scheduled sync:", error);
+    } catch (err) {
+      console.error("❌ Cron error:", err);
+    } finally {
+      isRunning = false;
     }
   });
 
@@ -94,7 +108,6 @@ app.use((req, res, next) => {
   //   console.log("🔁 Running retry for failed template sends...");
   //   // await retryFailedTemplates();
   // });
-
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -203,8 +203,8 @@ export default function LeadManager() {
                 </div>
                 {isRunning && (
                   <div className="flex items-center gap-1 text-sm text-gray-500">
-                    <Clock size={14} />
-                    <span>Every 10 </span>
+                    {/* <Clock size={14} /> */}
+                    {/* <span>Every 10 </span> */}
                   </div>
                 )}
                 <button
