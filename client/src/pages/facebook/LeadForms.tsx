@@ -44,7 +44,9 @@ interface NormalizedLead {
 }
 
 const PAGE_ID = import.meta.env.VITE_FB_PAGE_ID || "118584934681142";
-const ACCESS_TOKEN = import.meta.env.VITE_SYSTEM_USER_TOKEN_META || "EAAO1YPeIbdABQH1TresAdKODLNRGydKZBByQHNNKXsZASpIV5lZAD6MLMGdgL8t3rHGhlZBr089UfdURhsQJTd9aZCsbbGeFSsZAhZAAholXOt5z88zGHxfwNfx0wIEuWSpglj95e5ZAK5u4DlytGbWT6OqNxq4bEuNxAjtAYxnoMVXhAQIWZBo1ZCk77rgvdGkgZDZD";
+const ACCESS_TOKEN =
+  import.meta.env.VITE_SYSTEM_USER_TOKEN_META ||
+  "EAAO1YPeIbdABQBs51K2gvl0i9J9XpOqZAV9NgZBgxGZAqUJLuGUM2DihLnvBQrVuuAZCmZCGxqC2UWwccSqZCHi0ZAlq8AMuo045sD15rlZC2JTD94Pdc0PxJq7HmQEaATbolQhXliqHES4m0ZCdnlE3MQzYllrPbB7ajSSnQp5yZB6vdX0z4EA0mxqCh8xTRZCVAZDZD";
 
 const FacebookLeadsManager: React.FC = () => {
   const [forms, setForms] = useState<LeadgenForm[]>([]);

@@ -82,6 +82,7 @@ import ContactUsageDetail from "./pages/ContactUsageDetails";
 import AiUsageDashboard from "./pages/AiUsageDashboard";
 import UserManagementDashboard from "./pages/UserManagementDashboard";
 import Register from "./pages/Register";
+import FBLeadAutomationReport from "./pages/FbleadsReport";
 function ProtectedRoute({
   component: Component,
 }: {
@@ -327,6 +328,10 @@ function Router() {
 
       <Route path="/user-management-dashboard">
         {() => <ProtectedRoute component={UserManagementDashboard} />}
+      </Route>
+
+       <Route path="/fblead-automation-report">
+        {() => <ProtectedRoute component={FBLeadAutomationReport} />}
       </Route>
 
       <Route path="/register">

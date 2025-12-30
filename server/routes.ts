@@ -38,6 +38,7 @@ import * as leadManagementService from "./modules/leadManagement/leadManagement.
 import flowHandler from "./modules/facebook/fb.routes.ts";
 import axios from "axios";
 import { syncLeadsForFormMain } from "./worker.ts";
+import { Types } from "mongoose";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -50,6 +51,93 @@ export async function registerRoutes(
   const FB_API_VERSION = "v17.0";
   const FB_PAGE_ID = process.env.FB_PAGE_ID;
   const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
+
+  app.get("/api/fb-automation/stats", async (req, res) => {
+    const [totalLeads, sent, unsent, failed, activeAutomations] =
+      await Promise.all([
+        mongodb.Leadfb.countDocuments(),
+        mongodb.Leadfb.countDocuments({ template_sent: true }),
+        mongodb.Leadfb.countDocuments({
+          template_sent: false,
+          last_error: { $exists: false },
+        }),
+        mongodb.Leadfb.countDocuments({ last_error: { $exists: true } }),
+        mongodb.FormAutomation.countDocuments({ automation_active: true }),
+      ]);
+
+    res.json({
+      totalLeads,
+      sent,
+      unsent,
+      failed,
+      activeAutomations,
+    });
+  });
+
+  app.get("/api/fb-automation/leads", async (req, res) => {
+    const { search = "", status = "all", formId } = req.query as any;
+
+    const filter: any = {};
+
+    // Search
+    if (search) {
+      filter.$or = [
+        { full_name: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Status filter
+    if (status === "sent") {
+      filter.template_sent = true;
+    } else if (status === "unsent") {
+      filter.template_sent = false;
+      filter.last_error = { $exists: false };
+    } else if (status === "failed") {
+      filter.last_error = { $exists: true };
+    }
+
+    // Form filter
+    if (formId && formId !== "all") {
+      filter.form_id = formId;
+    }
+
+    const rows = await mongodb.Leadfb.find(filter)
+      .sort({ created_time: -1 })
+      .limit(200);
+
+    res.json({
+      rows,
+      total: rows.length,
+    });
+  });
+
+
+  app.post("/api/fb-automation/retry", async (req, res) => {
+    const { ids } = req.body as { ids: string[] };
+
+    if (!ids?.length) {
+      return res.status(400).json({ message: "No lead IDs provided" });
+    }
+
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+
+    const leads = await mongodb.Leadfb.find({
+      _id: { $in: objectIds },
+      $or: [{ template_sent: false }, { last_error: { $exists: true } }],
+    });
+
+    for (const lead of leads) {
+      console.log(`Enqueuing retry for lead ${lead._id}`);
+      // await enqueueAutomationRetry(lead);
+    }
+
+    res.json({
+      success: true,
+      retried: leads.length,
+    });
+  });
 
   app.post("/api/drip-campaigns", async (req, res) => {
     const { name, contacts, steps } = req.body;

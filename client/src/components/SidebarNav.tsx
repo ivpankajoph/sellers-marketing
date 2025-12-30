@@ -344,6 +344,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
         { label: "Team Member Report", href: "/reports/user-activity" },
         { label: "Blocked Contacts", href: "/reports/blocked" },
+          { label: "Fb Lead Automation Report", href: "/fblead-automation-report" },
         { label: "User Engagement", href: "/reports/user-engagement" },
       ],
     },
