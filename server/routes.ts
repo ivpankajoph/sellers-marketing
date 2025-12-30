@@ -51,6 +51,87 @@ export async function registerRoutes(
   const FB_PAGE_ID = process.env.FB_PAGE_ID;
   const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
 
+  app.post("/api/drip-campaigns", async (req, res) => {
+    const { name, contacts, steps } = req.body;
+
+    const normalizedContacts = contacts
+      .map((c: any) => {
+        if (typeof c === "string") return c;
+        if (typeof c === "object" && c.Phone) {
+          return String(c.Phone);
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (normalizedContacts.length === 0) {
+      return res.status(400).json({
+        error: "No valid contacts found",
+      });
+    }
+
+    const campaign = await mongodb.Campaign.create({
+      name,
+      contacts: normalizedContacts,
+      steps: steps.map((s: any, i: number) => ({
+        ...s,
+        order: i,
+      })),
+    });
+
+    res.json(campaign);
+  });
+
+  app.get("/api/drip-campaigns", async (_req, res) => {
+    const campaigns = await mongodb.Campaign.find().sort({ createdAt: -1 });
+    res.json(campaigns);
+  });
+
+  app.patch("/api/drip-campaigns/:id/start", async (req, res) => {
+    const campaign = await mongodb.Campaign.findById(req.params.id);
+
+    if (!campaign) return res.status(404).send();
+
+    campaign.status = "running";
+    campaign.currentStep = 0;
+    campaign.nextRunAt = new Date(); // start now
+
+    await campaign.save();
+    res.json(campaign);
+  });
+
+  // PATCH /campaign/:id/pause
+  app.patch("/api/drip-campaigns/:id/pause", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({ error: "Campaign id is required" });
+      }
+
+      const campaign = await mongodb.Campaign.findById(id);
+
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      campaign.status = "paused";
+      campaign.isProcessing = false;
+
+      await campaign.save();
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Error pausing campaign:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/drip-campaigns/:id", async (req, res) => {
+    await mongodb.Campaign.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  });
+
   app.get("/api/forms", async (req, res) => {
     try {
       // Fetch forms from Facebook
@@ -183,21 +264,22 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/sync-form/:formId", async (req, res) => {
+    try {
+      const automation = await mongodb.FormAutomation.findOne({
+        form_id: req.params.formId,
+      });
 
-  app.post('/api/sync-form/:formId', async (req, res) => {
-  try {
-    const automation = await mongodb.FormAutomation.findOne({ form_id: req.params.formId });
-    
-    if (!automation) {
-      return res.status(404).json({ error: 'Form automation not found' });
+      if (!automation) {
+        return res.status(404).json({ error: "Form automation not found" });
+      }
+
+      const result = await syncLeadsForFormMain(automation);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
-    
-    const result = await syncLeadsForFormMain(automation);
-    res.json({ success: true, ...result });
-  } catch (error:any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  });
 
   // // 5. Get System Status
   // app.get("/api/status", async (req, res) => {

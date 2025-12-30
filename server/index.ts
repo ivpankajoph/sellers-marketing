@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import {
+  Campaign,
+  CampaignLog,
   connectToMongoDB,
   FormAutomation,
 } from "./modules/storage/mongodb.adapter";
@@ -10,9 +12,15 @@ import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
 import {
   migrateExistingLeads,
+  parallelLimit,
+  processDripCampaigns,
+  retry,
   retryFailedTemplates,
+  retrySend,
+  sendWithLimit,
   syncLeadsForFormMain,
 } from "./worker";
+import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
 const app = express();
 const httpServer = createServer(app);
@@ -108,6 +116,80 @@ app.use((req, res, next) => {
   //   console.log("🔁 Running retry for failed template sends...");
   //   // await retryFailedTemplates();
   // });
+
+  cron.schedule(
+    "*/10 * * * * *",
+    async () => {
+      const now = new Date();
+      console.log("\n[CRON] Tick:", now.toISOString());
+
+      const campaigns = await Campaign.find({
+        status: "running",
+        isProcessing: false,
+        nextRunAt: { $lte: new Date() },
+      });
+
+      for (const campaign of campaigns) {
+        campaign.isProcessing = true;
+        await campaign.save();
+
+        try {
+          const step = campaign.steps[campaign.currentStep];
+          if (!step) {
+            campaign.status = "completed";
+            continue;
+          }
+
+          await parallelLimit(campaign.contacts, 5, async (contact: any) => {
+            const exists = await CampaignLog.findOne({
+              campaignId: campaign._id,
+              stepIndex: campaign.currentStep,
+              contact,
+            });
+
+            if (exists) return;
+
+            await retry(() =>
+              sendTemplateMessage(step.template_name!, contact)
+            );
+
+            await CampaignLog.create({
+              campaignId: campaign._id,
+              stepIndex: campaign.currentStep,
+              contact,
+              sentAt: new Date(),
+            });
+          });
+
+          campaign.currentStep++;
+
+          const nextStep = campaign.steps[campaign.currentStep];
+          if (!nextStep) {
+            campaign.status = "completed";
+          } else {
+            campaign.nextRunAt =
+              nextStep.scheduleType === "specific"
+                ? new Date(`${nextStep.specificDate} ${nextStep.specificTime}`)
+                : new Date(
+                    Date.now() +
+                      (nextStep.delayDays * 24 + nextStep.delayHours) *
+                        60 *
+                        60 *
+                        1000
+                  );
+          }
+        } catch (err) {
+          console.error("[CRON ERROR]", err);
+        } finally {
+          campaign.isProcessing = false;
+          await campaign.save();
+        }
+      }
+    },
+    {
+      timezone: "Asia/Kolkata",
+    }
+  );
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

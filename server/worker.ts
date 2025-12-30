@@ -1,6 +1,8 @@
 import {
+
   FormAutomation,
   Lead,
+  LeadDripStatus,
   Leadfb,
   SystemConfig,
   Template,
@@ -385,7 +387,7 @@ export async function syncLeadsForFormMain(formAutomation: any) {
             formAutomation.template_name // Using template_id from the form's automation
           );
           
-          
+
           if (result.success) {
             // Update lead with template_sent: true and message details
             await Leadfb.findByIdAndUpdate(newLead._id, {
@@ -584,5 +586,224 @@ export async function retryFailedTemplates() {
       }
     );
     throw error;
+  }
+}
+
+
+function calculateNextSendTime(step: any, currentTime: Date = new Date()): Date {
+  const nextTime = new Date(currentTime);
+
+  // Add delay
+  if (step.delay_unit === 'minutes') {
+    nextTime.setMinutes(nextTime.getMinutes() + step.delay_value);
+  } else if (step.delay_unit === 'hours') {
+    nextTime.setHours(nextTime.getHours() + step.delay_value);
+  } else if (step.delay_unit === 'days') {
+    nextTime.setDate(nextTime.getDate() + step.delay_value);
+  }
+
+  // If specific time is set, adjust to that time
+  if (step.send_at_time) {
+    const [hours, minutes] = step.send_at_time.split(':').map(Number);
+    nextTime.setHours(hours, minutes, 0, 0);
+    
+    // If calculated time is in the past, add a day
+    if (nextTime < new Date()) {
+      nextTime.setDate(nextTime.getDate() + 1);
+    }
+  }
+
+  return nextTime;
+}
+
+
+
+
+export async function processDripCampaigns() {
+  try {
+    console.log('🔄 Processing drip campaign messages...');
+
+    const now = new Date();
+
+    // Find all leads that need their next message sent
+    const pendingLeads = await LeadDripStatus.find({
+      status: 'active',
+      next_send_time: { $lte: now }
+    }).populate('campaign_id');
+
+    console.log(`Found ${pendingLeads.length} leads ready for next message`);
+
+    for (const leadStatus of pendingLeads) {
+      try {
+        const campaign: any = leadStatus.campaign_id;
+        
+        if (!campaign || !campaign.is_active) {
+          console.log(`Campaign inactive for lead ${leadStatus.lead_id}, skipping...`);
+          continue;
+        }
+
+        const nextStepIndex = leadStatus.current_step + 1;
+        
+        if (nextStepIndex >= campaign.steps.length) {
+          // Campaign completed
+          leadStatus.status = 'completed';
+          leadStatus.completed_at = new Date();
+          leadStatus.next_send_time = null;
+          await leadStatus.save();
+          console.log(`✅ Campaign completed for lead ${leadStatus.lead_id}`);
+          continue;
+        }
+
+        const nextStep = campaign.steps[nextStepIndex];
+
+        // Get lead details
+        const lead = await Leadfb.findOne({ lead_id: leadStatus.lead_id });
+        
+        if (!lead) {
+          console.log(`Lead ${leadStatus.lead_id} not found, marking as failed`);
+          leadStatus.status = 'failed';
+          await leadStatus.save();
+          continue;
+        }
+
+        // Send WhatsApp message
+        console.log(`📱 Sending step ${nextStepIndex + 1} to ${lead.full_name || lead.phone}`);
+        const result = await sendWhatsAppTemplate(lead, nextStep.template_id);
+
+        // Update lead status
+        leadStatus.steps_completed.push({
+          step_order: nextStepIndex,
+          template_id: nextStep.template_id,
+          sent_at: new Date(),
+          message_id: result.message_id,
+          success: result.success,
+          error: result.error
+        });
+
+        if (result.success) {
+          leadStatus.current_step = nextStepIndex;
+          
+          // Calculate next send time if there are more steps
+          if (nextStepIndex + 1 < campaign.steps.length) {
+            leadStatus.next_send_time = calculateNextSendTime(campaign.steps[nextStepIndex + 1]);
+            console.log(`✅ Message sent. Next message scheduled for ${leadStatus.next_send_time}`);
+          } else {
+            // This was the last step
+            leadStatus.status = 'completed';
+            leadStatus.completed_at = new Date();
+            leadStatus.next_send_time = null;
+            console.log(`✅ Final message sent. Campaign completed for ${lead.full_name}`);
+          }
+        } else {
+          leadStatus.status = 'failed';
+          console.log(`❌ Failed to send message: ${result.error}`);
+        }
+
+        leadStatus.last_updated = new Date();
+        await leadStatus.save();
+
+      } catch (error: any) {
+        console.error(`Error processing lead ${leadStatus.lead_id}:`, error.message);
+      }
+    }
+
+    console.log('✨ Drip campaign processing complete');
+  } catch (error: any) {
+    console.error('Error in processDripCampaigns:', error.message);
+  }
+}
+
+async function getCampaignStats(campaignId: string) {
+  const total = await LeadDripStatus.countDocuments({ campaign_id: campaignId });
+  const active = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'active' });
+  const completed = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'completed' });
+  const failed = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'failed' });
+
+  return { total, active, completed, failed };
+}
+
+// ===== API Routes =====
+
+// Get all drip campaigns
+
+
+// Create new drip campaign
+
+
+// Update drip campaign
+
+export async function retrySend(fn: () => any, retries = 3, delayMs = 1000) {
+  let attempt = 0;
+
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      console.warn(`[RETRY] Attempt ${attempt} failed`);
+
+      if (attempt >= retries) throw err;
+
+      await new Promise((res) =>
+        setTimeout(res, delayMs * attempt)
+      );
+    }
+  }
+}
+
+
+export async function sendWithLimit(items: any, limit: number, handler: (arg0: any) => Promise<any>) {
+  const executing: Promise<any>[] = [];
+
+  for (const item of items) {
+    const p = handler(item).finally(() => {
+      executing.splice(executing.indexOf(p), 1);
+    });
+
+    executing.push(p);
+
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+}
+
+
+export async function parallelLimit<T>(
+  items: T[],
+  limit: number,
+  handler: (item: T) => Promise<void>
+) {
+  const executing: Promise<void>[] = [];
+
+  for (const item of items) {
+    const p = handler(item).finally(() => {
+      executing.splice(executing.indexOf(p), 1);
+    });
+
+    executing.push(p);
+
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+}
+
+
+export async function retry(fn: () => Promise<any>, retries = 3) {
+  let attempt = 0;
+
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= retries) throw err;
+      await new Promise((r) => setTimeout(r, attempt * 1000));
+    }
   }
 }
