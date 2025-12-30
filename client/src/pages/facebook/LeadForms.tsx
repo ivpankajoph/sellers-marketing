@@ -43,9 +43,8 @@ interface NormalizedLead {
   [key: string]: string | undefined;
 }
 
-// --- Constants ---
-const PAGE_ID = import.meta.env.VITE_FB_PAGE_ID;
-const ACCESS_TOKEN = import.meta.env.VITE_SYSTEM_USER_TOKEN_META;
+const PAGE_ID = import.meta.env.VITE_FB_PAGE_ID || "118584934681142";
+const ACCESS_TOKEN = import.meta.env.VITE_SYSTEM_USER_TOKEN_META || "EAAO1YPeIbdABQH1TresAdKODLNRGydKZBByQHNNKXsZASpIV5lZAD6MLMGdgL8t3rHGhlZBr089UfdURhsQJTd9aZCsbbGeFSsZAhZAAholXOt5z88zGHxfwNfx0wIEuWSpglj95e5ZAK5u4DlytGbWT6OqNxq4bEuNxAjtAYxnoMVXhAQIWZBo1ZCk77rgvdGkgZDZD";
 
 const FacebookLeadsManager: React.FC = () => {
   const [forms, setForms] = useState<LeadgenForm[]>([]);
