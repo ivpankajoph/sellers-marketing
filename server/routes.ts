@@ -37,7 +37,12 @@ import * as contactAgentService from "./modules/contactAgent/contactAgent.servic
 import * as leadManagementService from "./modules/leadManagement/leadManagement.service";
 import flowHandler from "./modules/facebook/fb.routes.ts";
 import axios from "axios";
-import { syncLeadsForFormMain } from "./worker.ts";
+import {
+  buildMetaTemplate,
+  syncLeadsForFormMain,
+  uploadHeaderImage,
+  validateMetaTemplate,
+} from "./worker.ts";
 import { Types } from "mongoose";
 
 export async function registerRoutes(
@@ -112,7 +117,6 @@ export async function registerRoutes(
       total: rows.length,
     });
   });
-
 
   app.post("/api/fb-automation/retry", async (req, res) => {
     const { ids } = req.body as { ids: string[] };
@@ -1553,20 +1557,36 @@ export async function registerRoutes(
   });
 
   app.post("/api/templates", async (req, res) => {
-    try {
-      const parsed = insertTemplateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          message: "Invalid template data",
-          errors: parsed.error.errors,
-        });
+  try {
+    let headerImageUrl = null;
+
+    if (req.body.headerType === "image") {
+      if (!req.body.headerImage) {
+        return res.status(400).json({ error: "Header image required" });
       }
-      const template = await storage.createTemplate(parsed.data);
-      res.status(201).json(template);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create template" });
+      headerImageUrl = await uploadHeaderImage(req.body.headerImage);
     }
-  });
+
+    const template = await mongodb.Template.create({
+      name: req.body.name,
+      category: req.body.category,
+      language: req.body.language,
+      headerType: req.body.headerType,
+      headerText: req.body.headerText,
+      headerImageUrl,
+      body: req.body.body,
+      footer: req.body.footer,
+      buttons: req.body.buttons,
+      status: req.body.status,
+    });
+
+    res.status(201).json(template);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
   app.put("/api/templates/:id", async (req, res) => {
     try {
@@ -1866,191 +1886,101 @@ export async function registerRoutes(
     }
   });
 
+  // metaTemplate.builder.ts
+
   // Submit template for Meta approval
   app.post("/api/templates/:id/submit-approval", async (req, res) => {
-    try {
-      const template = (await storage.getTemplate(req.params.id)) as any;
-      if (!template) {
-        return res.status(404).json({ message: "Template not found" });
-      }
+    const template = await storage.getTemplate(req.params.id);
 
-      if (
-        template.metaStatus === "APPROVED" ||
-        template.metaStatus === "approved"
-      ) {
-        return res
-          .status(400)
-          .json({ message: "Template is already approved by Meta" });
-      }
-      if (
-        template.metaStatus === "REJECTED" ||
-        template.metaStatus === "rejected"
-      ) {
-        return res.status(400).json({
-          message: "Template was rejected by Meta. Please edit and resubmit.",
-        });
-      }
-      if (template.metaTemplateId) {
-        return res.status(400).json({
-          message:
-            "Template has already been submitted to Meta. Please sync to check status.",
-        });
-      }
-
-      const { credentialsService } = await import(
-        "./modules/credentials/credentials.service"
-      );
-
-      const userId = (req as any).session?.user?.id;
-      let token: string | undefined;
-      let wabaId: string | undefined;
-
-      if (userId) {
-        const credentials = await credentialsService.getDecryptedCredentials(
-          userId
-        );
-        if (credentials?.whatsappToken) {
-          token = credentials.whatsappToken;
-        }
-        if (credentials?.businessAccountId) {
-          wabaId = credentials.businessAccountId;
-        }
-      }
-
-      if (!token) {
-        token =
-          process.env.WHATSAPP_TOKEN_NEW ||
-          process.env.WHATSAPP_TOKEN ||
-          process.env.FB_ACCESS_TOKEN;
-      }
-      if (!wabaId) {
-        wabaId = process.env.WABA_ID;
-      }
-
-      if (!token) {
-        return res.status(400).json({
-          message:
-            "WhatsApp access token not configured. Please configure your API credentials in Settings.",
-        });
-      }
-
-      if (!wabaId) {
-        return res.status(400).json({
-          message: "WABA_ID not configured. Please configure it in Settings.",
-        });
-      }
-
-      // Convert template name to Meta format
-      const metaTemplateName = template.name
-        .toLowerCase()
-        .replace(/\s+/g, "_")
-        .replace(/[^a-z0-9_]/g, "");
-
-      // console.log(
-      //   `[TemplateSubmit] Submitting template "${metaTemplateName}" to Meta WABA: ${wabaId}`
-      // );
-
-      // Prepare template for Meta submission
-      // Variables in Meta must be {{1}}, {{2}}, etc. - not named variables
-      let processedContent = template.content;
-      let variableIndex = 1;
-      const variableMatches = template.content.match(/\{\{([^}]+)\}\}/g) || [];
-      for (const match of variableMatches) {
-        processedContent = processedContent.replace(
-          match,
-          `{{${variableIndex}}}`
-        );
-        variableIndex++;
-      }
-
-      // Create example values for body parameters if there are variables
-      const bodyComponent: any = {
-        type: "BODY",
-        text: processedContent,
-      };
-
-      // Add example if there are variables
-      if (variableIndex > 1) {
-        bodyComponent.example = {
-          body_text: [
-            Array.from(
-              { length: variableIndex - 1 },
-              (_, i) => `Sample${i + 1}`
-            ),
-          ],
-        };
-      }
-
-      const templateData = {
-        name: metaTemplateName,
-        category: template.category.toUpperCase(),
-        language: "en",
-        components: [bodyComponent],
-      };
-
-      // console.log(
-      //   `[TemplateSubmit] Sending to Meta:`,
-      //   JSON.stringify(templateData, null, 2)
-      // );
-
-      // Submit to Meta Graph API
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${wabaId}/message_templates`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(templateData),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error("[TemplateSubmit] Meta error:", data);
-
-        // Handle specific error codes
-        let errorMessage = data.error?.message || "Unknown error";
-        if (data.error?.code === 100) {
-          errorMessage =
-            "Template name already exists in Meta. Please use a different name.";
-        } else if (data.error?.code === 190) {
-          errorMessage =
-            "Invalid access token. Please check your WHATSAPP_TOKEN.";
-        } else if (data.error?.error_subcode === 2388093) {
-          errorMessage =
-            "Template contains prohibited content. Please check Meta's template guidelines.";
-        }
-
-        return res.status(response.status).json({
-          message: "Failed to submit template to Meta",
-          error: errorMessage,
-          details: data.error,
-        });
-      }
-
-      // console.log(
-      //   `[TemplateSubmit] Successfully created template in Meta. ID: ${data.id}, Status: ${data.status}`
-      // );
-
-      // Update template status to pending (Meta will review it)
-      await storage.updateTemplate(req.params.id, { status: "pending" });
-
-      res.json({
-        success: true,
-        message: `Template "${metaTemplateName}" submitted to Meta for approval. It will appear in your Meta Business Suite templates list. Approval typically takes 1-24 hours.`,
-        metaTemplateId: data.id,
-        metaTemplateName: metaTemplateName,
-        status: data.status,
-      });
-    } catch (error) {
-      console.error("[TemplateSubmit] Error:", error);
-      res
-        .status(500)
-        .json({ message: "Failed to submit template for approval" });
+    if (!template) {
+      return res.status(404).json({ message: "Template not found" });
     }
+
+    const validationErrors = validateMetaTemplate(template);
+    if (validationErrors.length) {
+      return res.status(400).json({
+        message: "Template validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    const metaTemplate = buildMetaTemplate(template);
+
+    const { credentialsService } = await import(
+      "./modules/credentials/credentials.service"
+    );
+
+    const userId = (req as any).session?.user?.id;
+    let token: string | undefined;
+    let wabaId: string | undefined;
+
+    if (userId) {
+      const credentials = await credentialsService.getDecryptedCredentials(
+        userId
+      );
+      if (credentials?.whatsappToken) {
+        token = credentials.whatsappToken;
+      }
+      if (credentials?.businessAccountId) {
+        wabaId = credentials.businessAccountId;
+      }
+    }
+
+    if (!token) {
+      token =
+        process.env.WHATSAPP_TOKEN_NEW ||
+        process.env.WHATSAPP_TOKEN ||
+        process.env.FB_ACCESS_TOKEN;
+    }
+    if (!wabaId) {
+      wabaId = process.env.WABA_ID;
+    }
+
+    if (!token) {
+      return res.status(400).json({
+        message:
+          "WhatsApp access token not configured. Please configure your API credentials in Settings.",
+      });
+    }
+
+    if (!wabaId) {
+      return res.status(400).json({
+        message: "WABA_ID not configured. Please configure it in Settings.",
+      });
+    }
+
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${wabaId}/message_templates`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(metaTemplate),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(400).json({
+        message: "Meta submission failed",
+        error: data.error?.message,
+      });
+    }
+
+    await storage.updateTemplate(template.id, {
+      metaTemplateId: data.id,
+      metaStatus: data.status,
+      status: "pending",
+    } as any);
+
+    res.json({
+      success: true,
+      metaTemplateId: data.id,
+      status: data.status,
+    });
   });
 
   app.get("/api/automations", async (req, res) => {

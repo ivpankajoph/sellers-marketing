@@ -408,25 +408,77 @@ CampaignLogSchema.index(
   { unique: true }
 );
 
+const ButtonSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ["quick_reply", "url", "phone_number"],
+      required: true,
+    },
+    text: { type: String, required: true },
+    url: String,
+    phone_number: String,
+  },
+  { _id: false }
+);
+
+// const TemplateSchema = new Schema(
+//   {
+//     id: { type: String, required: true, unique: true },
+//     name: { type: String, required: true },
+//     category: { type: String, default: "utility" },
+//     content: { type: String, required: true },
+//     variables: { type: [String], default: [] },
+//     status: { type: String, default: "pending" },
+//     language: { type: String, default: "en" },
+//     metaTemplateId: { type: String },
+//     metaTemplateName: { type: String },
+//     metaStatus: { type: String },
+//     rejectionReason: { type: String },
+//     lastSyncedAt: { type: String },
+//     createdAt: { type: String, required: true },
+//     updatedAt: { type: String, required: true },
+//   },
+//   { collection: "templates" }
+// );
+
+
+
 const TemplateSchema = new Schema(
   {
-    id: { type: String, required: true, unique: true },
-    name: { type: String, required: true },
-    category: { type: String, default: "utility" },
-    content: { type: String, required: true },
-    variables: { type: [String], default: [] },
-    status: { type: String, default: "pending" },
+    name: { type: String, required: true, unique: true },
+    category: {
+      type: String,
+      enum: ["MARKETING", "UTILITY", "AUTHENTICATION"],
+      required: true,
+    },
     language: { type: String, default: "en" },
-    metaTemplateId: { type: String },
-    metaTemplateName: { type: String },
-    metaStatus: { type: String },
-    rejectionReason: { type: String },
-    lastSyncedAt: { type: String },
-    createdAt: { type: String, required: true },
-    updatedAt: { type: String, required: true },
+
+    headerType: {
+      type: String,
+      enum: ["text", "image", null],
+      default: null,
+    },
+    headerText: String,
+    headerImageUrl: String,
+
+    content: { type: String, required: true },
+    footer: String,
+
+    buttons: [ButtonSchema],
+
+    metaTemplateId: String,
+    metaStatus: {
+      type: String,
+      enum: ["draft", "pending", "approved", "rejected"],
+      default: "draft",
+    },
+
+    metaRejectionReason: String,
   },
-  { collection: "templates" }
+  { timestamps: true, collection: "templates" }
 );
+
 
 const AutomationSchema = new Schema(
   {

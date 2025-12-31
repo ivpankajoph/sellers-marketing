@@ -61,7 +61,7 @@ const NavItem = ({ item, isCollapsed }: NavItemProps) => {
     (item.subItems && item.subItems.some((sub: any) => location === sub.href));
   const [isOpen, setIsOpen] = useState(isActive);
   const itemRef = useRef<HTMLDivElement>(null);
-  
+
   const handleToggle = (open: boolean) => {
     setIsOpen(open);
     if (open && itemRef.current) {
@@ -71,10 +71,14 @@ const NavItem = ({ item, isCollapsed }: NavItemProps) => {
     }
   };
 
-  const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+  const handleNavigation = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
     // Check if it's a special click (new tab, new window, etc.)
-    const isSpecialClick = e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1;
-    
+    const isSpecialClick =
+      e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1;
+
     if (!isSpecialClick) {
       // Normal click - use client-side routing
       e.preventDefault();
@@ -266,6 +270,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       subItems: [
         { label: "Broadcasts", href: "/campaigns/broadcast" },
         { label: "Schedule Messages", href: "/campaigns/schedule" },
+        { label: "Single Messages", href: "/campaigns/past" },
       ],
     },
     {
@@ -344,7 +349,10 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
         { label: "Team Member Report", href: "/reports/user-activity" },
         { label: "Blocked Contacts", href: "/reports/blocked" },
-          { label: "Fb Lead Automation Report", href: "/fblead-automation-report" },
+        {
+          label: "Fb Lead Automation Report",
+          href: "/fblead-automation-report",
+        },
         { label: "User Engagement", href: "/reports/user-engagement" },
       ],
     },

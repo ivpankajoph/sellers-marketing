@@ -36,6 +36,167 @@ function getWhatsAppCredentials(): {
   return { token, phoneNumberId };
 }
 
+// export async function sendTemplateMessage(
+//   to: string,
+//   template: TemplateConfig
+// ): Promise<{ success: boolean; error?: string; messageId?: string }> {
+//   console.log("[TemplateMessage] ===== START =====");
+//   console.log("[TemplateMessage] To:", to);
+//   console.log(
+//     "[TemplateMessage] Raw template config:",
+//     JSON.stringify(template, null, 2)
+//   );
+
+//   const credentials = getWhatsAppCredentials();
+
+//   if (!credentials) {
+//     console.error("[TemplateMessage] WhatsApp credentials not configured");
+//     return { success: false, error: "WhatsApp credentials not configured" };
+//   }
+
+//   console.log(
+//     "[TemplateMessage] Using phoneNumberId:",
+//     credentials.phoneNumberId
+//   );
+//   console.log("[TemplateMessage] Token present:", Boolean(credentials.token));
+
+//   // Meta requires lowercase + underscores
+//   const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, "_");
+
+//   console.log(
+//     `[TemplateMessage] Normalized template name: "${metaTemplateName}"`
+//   );
+
+//   const languageCodesToTry = [
+//     template.languageCode,
+//     "en",
+//     "en_US",
+//     "en_GB",
+//   ].filter(Boolean);
+
+//   const uniqueLanguages = Array.from(new Set(languageCodesToTry));
+
+//   console.log("[TemplateMessage] Language fallback order:", uniqueLanguages);
+
+//   for (const langCode of uniqueLanguages) {
+//     console.log("--------------------------------------------");
+//     console.log(`[TemplateMessage] Attempting language: ${langCode}`);
+
+//     const messagePayload: any = {
+//       messaging_product: "whatsapp",
+//       recipient_type: "individual",
+//       to,
+//       type: "template",
+//       template: {
+//         name: metaTemplateName,
+//         language: {
+//           code: langCode,
+//         },
+//       },
+//     };
+
+//     if (template.components?.length) {
+//       messagePayload.template.components = template.components;
+//     }
+
+//     console.log(
+//       "[TemplateMessage] Payload:",
+//       JSON.stringify(messagePayload, null, 2)
+//     );
+
+//     try {
+//       const response = await fetch(
+//         `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+//         {
+//           method: "POST",
+//           headers: {
+//             Authorization: `Bearer ${credentials.token}`,
+//             "Content-Type": "application/json",
+//           },
+//           body: JSON.stringify(messagePayload),
+//         }
+//       );
+
+//       const responseText = await response.text();
+//       let data: any;
+
+//       try {
+//         data = JSON.parse(responseText);
+//       } catch {
+//         data = responseText;
+//       }
+
+//       console.log("[TemplateMessage] HTTP Status:", response.status);
+//       console.log("[TemplateMessage] Response Headers:", {
+//         "x-fb-request-id": response.headers.get("x-fb-request-id"),
+//         "x-fb-trace-id": response.headers.get("x-fb-trace-id"),
+//       });
+
+//       console.log(
+//         "[TemplateMessage] Response Body:",
+//         JSON.stringify(data, null, 2)
+//       );
+
+//       if (response.ok && data?.messages?.[0]?.id) {
+//         console.log(
+//           `[TemplateMessage] ✅ Success | Message ID: ${data.messages[0].id}`
+//         );
+//         console.log("[TemplateMessage] ===== END =====");
+//         return {
+//           success: true,
+//           messageId: data.messages[0].id,
+//         };
+//       }
+
+//       const errorMsg = data?.error?.message || "Unknown Meta error";
+//       const errorCode = data?.error?.code;
+//       const errorSubcode = data?.error?.error_subcode;
+
+//       console.error("[TemplateMessage] ❌ Meta Error");
+//       console.error("Message:", errorMsg);
+//       console.error("Code:", errorCode);
+//       console.error("Subcode:", errorSubcode);
+//       console.error(
+//         "FB Request ID:",
+//         data?.error?.fbtrace_id || response.headers.get("x-fb-request-id")
+//       );
+
+//       // Retryable: template not found / language mismatch
+//       if (
+//         errorCode === 132001 ||
+//         errorMsg.toLowerCase().includes("does not exist") ||
+//         errorMsg.toLowerCase().includes("language")
+//       ) {
+//         console.log(
+//           `[TemplateMessage] Retrying with next language (failed: ${langCode})`
+//         );
+//         continue;
+//       }
+
+//       // Non-retryable error
+//       console.log("[TemplateMessage] ===== END =====");
+//       return { success: false, error: errorMsg };
+//     } catch (error) {
+//       console.error("[TemplateMessage] ❌ Fetch Exception:", error);
+//       console.log("[TemplateMessage] ===== END =====");
+//       return {
+//         success: false,
+//         error: error instanceof Error ? error.message : "Unknown error",
+//       };
+//     }
+//   }
+
+//   console.error(
+//     `[TemplateMessage] ❌ Template "${metaTemplateName}" not found in any language`
+//   );
+//   console.log("[TemplateMessage] ===== END =====");
+
+//   return {
+//     success: false,
+//     error: `Template "${metaTemplateName}" not found in Meta. Sync templates and verify name + language.`,
+//   };
+// }
+
 export async function sendTemplateMessage(
   to: string,
   template: TemplateConfig
@@ -54,50 +215,69 @@ export async function sendTemplateMessage(
     return { success: false, error: "WhatsApp credentials not configured" };
   }
 
-  console.log(
-    "[TemplateMessage] Using phoneNumberId:",
-    credentials.phoneNumberId
-  );
-  console.log("[TemplateMessage] Token present:", Boolean(credentials.token));
-
   // Meta requires lowercase + underscores
   const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, "_");
 
-  console.log(
-    `[TemplateMessage] Normalized template name: "${metaTemplateName}"`
+  const languageCodesToTry = Array.from(
+    new Set([template.languageCode, "en", "en_US", "en_GB"].filter(Boolean))
   );
 
-  const languageCodesToTry = [
-    template.languageCode,
-    "en",
-    "en_US",
-    "en_GB",
-  ].filter(Boolean);
+  console.log("[TemplateMessage] Normalized template name:", metaTemplateName);
+  console.log("[TemplateMessage] Language fallback order:", languageCodesToTry);
 
-  const uniqueLanguages = Array.from(new Set(languageCodesToTry));
-
-  console.log("[TemplateMessage] Language fallback order:", uniqueLanguages);
-
-  for (const langCode of uniqueLanguages) {
+  for (const langCode of languageCodesToTry) {
     console.log("--------------------------------------------");
     console.log(`[TemplateMessage] Attempting language: ${langCode}`);
 
-    const messagePayload: any = {
+    /** ✅ ENSURE BODY PARAMETERS EXIST */
+    const components = template.components?.length
+      ? template.components
+      : [
+          {
+            type: "body",
+            parameters: [
+              {
+                type: "text",
+                text: "there", // default fallback for {{1}}
+              },
+            ],
+          },
+        ];
+
+    /** ❌ BLOCK UNDEFINED / EMPTY PARAMS */
+    for (const component of components) {
+      if (component.parameters) {
+        for (const param of component.parameters) {
+          if (
+            !param ||
+            param.text === undefined ||
+            param.text === null ||
+            param.text === ""
+          ) {
+            console.error(
+              "[TemplateMessage] ❌ Invalid template parameter detected:",
+              param
+            );
+            return {
+              success: false,
+              error: "Invalid WhatsApp template parameters",
+            };
+          }
+        }
+      }
+    }
+
+    const messagePayload = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
       type: "template",
       template: {
         name: metaTemplateName,
-        language: {
-          code: langCode,
-        },
+        language: { code: langCode },
+        components,
       },
     };
-
-    if (template.components?.length) {
-      messagePayload.template.components = template.components;
-    }
 
     console.log(
       "[TemplateMessage] Payload:",
@@ -118,67 +298,38 @@ export async function sendTemplateMessage(
       );
 
       const responseText = await response.text();
-      let data: any;
-
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        data = responseText;
-      }
+      const data = responseText ? JSON.parse(responseText) : {};
 
       console.log("[TemplateMessage] HTTP Status:", response.status);
-      console.log("[TemplateMessage] Response Headers:", {
-        "x-fb-request-id": response.headers.get("x-fb-request-id"),
-        "x-fb-trace-id": response.headers.get("x-fb-trace-id"),
-      });
-
-      console.log(
-        "[TemplateMessage] Response Body:",
-        JSON.stringify(data, null, 2)
-      );
+      console.log("[TemplateMessage] Response:", JSON.stringify(data, null, 2));
 
       if (response.ok && data?.messages?.[0]?.id) {
         console.log(
           `[TemplateMessage] ✅ Success | Message ID: ${data.messages[0].id}`
         );
         console.log("[TemplateMessage] ===== END =====");
-        return {
-          success: true,
-          messageId: data.messages[0].id,
-        };
+        return { success: true, messageId: data.messages[0].id };
       }
 
       const errorMsg = data?.error?.message || "Unknown Meta error";
       const errorCode = data?.error?.code;
-      const errorSubcode = data?.error?.error_subcode;
 
-      console.error("[TemplateMessage] ❌ Meta Error");
-      console.error("Message:", errorMsg);
-      console.error("Code:", errorCode);
-      console.error("Subcode:", errorSubcode);
-      console.error(
-        "FB Request ID:",
-        data?.error?.fbtrace_id || response.headers.get("x-fb-request-id")
-      );
+      console.error("[TemplateMessage] ❌ Meta Error:", errorMsg, errorCode);
 
-      // Retryable: template not found / language mismatch
+      /** 🔁 Retry only for template/language mismatch */
       if (
         errorCode === 132001 ||
-        errorMsg.toLowerCase().includes("does not exist") ||
-        errorMsg.toLowerCase().includes("language")
+        errorMsg.toLowerCase().includes("language") ||
+        errorMsg.toLowerCase().includes("does not exist")
       ) {
-        console.log(
-          `[TemplateMessage] Retrying with next language (failed: ${langCode})`
-        );
+        console.log(`[TemplateMessage] Retrying with next language...`);
         continue;
       }
 
-      // Non-retryable error
       console.log("[TemplateMessage] ===== END =====");
       return { success: false, error: errorMsg };
     } catch (error) {
       console.error("[TemplateMessage] ❌ Fetch Exception:", error);
-      console.log("[TemplateMessage] ===== END =====");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -193,7 +344,7 @@ export async function sendTemplateMessage(
 
   return {
     success: false,
-    error: `Template "${metaTemplateName}" not found in Meta. Sync templates and verify name + language.`,
+    error: `Template "${metaTemplateName}" not found in Meta`,
   };
 }
 

@@ -13,6 +13,8 @@ import cron from "node-cron";
 import { Types } from "mongoose";
 import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
+import { v2 as cloudinary } from "cloudinary";
+
 const FB_API_VERSION = "v17.0";
 const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
 const SYSTEM_USER_TOKEN_META = process.env.SYSTEM_USER_TOKEN_META;
@@ -806,4 +808,146 @@ export async function retry(fn: () => Promise<any>, retries = 3) {
       await new Promise((r) => setTimeout(r, attempt * 1000));
     }
   }
+}
+
+
+export function buildMetaTemplate(template: any) {
+  const components: any[] = [];
+
+  /* ---------------- HEADER ---------------- */
+  if (template.headerType === "text" && template.headerText) {
+    components.push({
+      type: "HEADER",
+      format: "TEXT",
+      text: template.headerText,
+    });
+  }
+
+  if (template.headerType === "image" && template.headerImageUrl) {
+    components.push({
+      type: "HEADER",
+      format: "IMAGE",
+      example: {
+        header_handle: [template.headerImageUrl],
+      },
+    });
+  }
+
+  /* ---------------- BODY ---------------- */
+  let processedContent = template.content;
+  let index = 1;
+
+  processedContent = processedContent.replace(/\{\{[^}]+\}\}/g, () => {
+    return `{{${index++}}}`;
+  });
+
+  const bodyComponent: any = {
+    type: "BODY",
+    text: processedContent,
+  };
+
+  if (index > 1) {
+    bodyComponent.example = {
+      body_text: [
+        Array.from({ length: index - 1 }, (_, i) => `Sample${i + 1}`),
+      ],
+    };
+  }
+
+  components.push(bodyComponent);
+
+  /* ---------------- FOOTER ---------------- */
+  if (template.footer) {
+    components.push({
+      type: "FOOTER",
+      text: template.footer,
+    });
+  }
+
+  /* ---------------- BUTTONS ---------------- */
+  if (template.buttons?.length) {
+    components.push({
+      type: "BUTTONS",
+      buttons: template.buttons.map((btn: any) => {
+        if (btn.type === "quick_reply") {
+          return { type: "QUICK_REPLY", text: btn.text };
+        }
+
+        if (btn.type === "url") {
+          return {
+            type: "URL",
+            text: btn.text,
+            url: btn.url,
+          };
+        }
+
+        if (btn.type === "phone_number") {
+          return {
+            type: "PHONE_NUMBER",
+            text: btn.text,
+            phone_number: btn.phone_number,
+          };
+        }
+      }),
+    });
+  }
+
+  return {
+    name: template.name,
+    category: template.category.toUpperCase(),
+    language: template.language || "en",
+    components,
+  };
+}
+
+export function validateMetaTemplate(template: any) {
+  const errors: string[] = [];
+
+  if (!template.content?.trim()) {
+    errors.push("Body text is required");
+  }
+
+  if (template.buttons?.length > 3) {
+    errors.push("Max 3 buttons allowed");
+  }
+
+  template.buttons?.forEach((btn: any) => {
+    if (btn.text.length > 30) {
+      errors.push("Button text must be ≤ 30 characters");
+    }
+
+    if (btn.type === "url" && !btn.url) {
+      errors.push("URL button requires a valid URL");
+    }
+
+    if (btn.type === "phone_number" && !btn.phone_number) {
+      errors.push("Phone button requires phone_number");
+    }
+  });
+
+  if (
+    template.headerType === "image" &&
+    !template.headerImageUrl
+  ) {
+    errors.push("Image header requires a public HTTPS image URL");
+  }
+
+  return errors;
+}
+
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD!,
+  api_key: process.env.CLOUDINARY_KEY!,
+  api_secret: process.env.CLOUDINARY_SECRET!,
+});
+
+
+export async function uploadHeaderImage(base64: string): Promise<string> {
+  const res = await cloudinary.uploader.upload(base64, {
+    folder: "whatsapp-templates",
+    resource_type: "image",
+  });
+
+  return res.secure_url;
 }

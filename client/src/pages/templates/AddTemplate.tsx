@@ -59,18 +59,17 @@ export default function AddTemplate() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("Image must be less than 5MB");
-        return;
-      }
-      setHeaderImageFile(file);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setHeaderImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be less than 5MB");
+      return;
     }
+
+    setHeaderImageFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setHeaderImage(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const removeImage = () => {
@@ -93,11 +92,13 @@ export default function AddTemplate() {
   };
 
   const updateButton = (id: string, field: keyof ButtonType, value: string) => {
-    setButtons(buttons.map(btn => btn.id === id ? { ...btn, [field]: value } : btn));
+    setButtons(
+      buttons.map((btn) => (btn.id === id ? { ...btn, [field]: value } : btn))
+    );
   };
 
   const removeButton = (id: string) => {
-    setButtons(buttons.filter(btn => btn.id !== id));
+    setButtons(buttons.filter((btn) => btn.id !== id));
   };
 
   const createTemplateMutation = useMutation({
@@ -109,7 +110,7 @@ export default function AddTemplate() {
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error || "Failed to create template");
+        throw new Error(error.error || "Failed to create template from frontend");
       }
       return res.json();
     },
@@ -136,17 +137,23 @@ export default function AddTemplate() {
       toast.error("Please enter body text");
       return;
     }
+    if (body.length > 1000) {
+      toast.error("Body text must be 1000 characters or fewer");
+      return;
+    }
 
     const templateName = name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
 
-    // Validate buttons
+    // Validate and prepare buttons
     const validButtons = buttons
-      .filter(btn => btn.text.trim())
-      .map(btn => ({
+      .filter((btn) => btn.text.trim())
+      .map((btn) => ({
         type: btn.type,
         text: btn.text.trim(),
-        ...(btn.type === "url" && { url: btn.url || "https://example.com" }),
-        ...(btn.type === "phone_number" && { phone_number: btn.phone_number || "+1234567890" }),
+        ...(btn.type === "url" && { url: btn.url?.trim() || "https://example.com" }),
+        ...(btn.type === "phone_number" && {
+          phone_number: btn.phone_number?.trim() || "+1234567890",
+        }),
       }));
 
     createTemplateMutation.mutate({
@@ -155,6 +162,7 @@ export default function AddTemplate() {
       language,
       headerType: headerType === "none" ? null : headerType,
       headerText: headerType === "text" ? headerText : null,
+      headerImage: headerType === "image" ? headerImage : null,
       content: body,
       footer: footer || null,
       buttons: validButtons.length > 0 ? validButtons : undefined,
@@ -382,16 +390,28 @@ export default function AddTemplate() {
                 )}
 
                 <div className="grid gap-2">
-                  <Label htmlFor="body">Body Text *</Label>
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="body">Body Text *</Label>
+                    <span className={`text-xs ${body.length >= 1000 ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                      {body.length}/1000
+                    </span>
+                  </div>
                   <Textarea
                     id="body"
                     placeholder="Enter your message here. Use {{1}}, {{2}} for variables."
                     className="min-h-[120px]"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
+                    maxLength={1000}
                   />
+                  {body.length >= 1000 && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      Maximum 1000 characters reached
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    Use {"{{1}}"}, {"{{2}}"} etc. for dynamic variables
+                    Use {"{{1}}"}, {"{{2}}"} etc. for dynamic variables. Keep under 1000 characters.
                   </p>
                 </div>
 
@@ -420,7 +440,10 @@ export default function AddTemplate() {
                   </div>
 
                   {buttons.map((btn, idx) => (
-                    <div key={btn.id} className="grid grid-cols-12 gap-2 items-end">
+                    <div
+                      key={btn.id}
+                      className="grid grid-cols-12 gap-2 items-end"
+                    >
                       <div className="col-span-4">
                         <Select
                           value={btn.type}
@@ -432,9 +455,13 @@ export default function AddTemplate() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="quick_reply">Quick Reply</SelectItem>
+                            <SelectItem value="quick_reply">
+                              Quick Reply
+                            </SelectItem>
                             <SelectItem value="url">URL</SelectItem>
-                            <SelectItem value="phone_number">Phone Number</SelectItem>
+                            <SelectItem value="phone_number">
+                              Phone Number
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -442,7 +469,9 @@ export default function AddTemplate() {
                         <Input
                           placeholder="Button text (max 30 chars)"
                           value={btn.text}
-                          onChange={(e) => updateButton(btn.id, "text", e.target.value)}
+                          onChange={(e) =>
+                            updateButton(btn.id, "text", e.target.value)
+                          }
                           maxLength={30}
                         />
                       </div>
@@ -473,7 +502,11 @@ export default function AddTemplate() {
                             placeholder="Phone number (e.g., +911234567890)"
                             value={btn.phone_number || ""}
                             onChange={(e) =>
-                              updateButton(btn.id, "phone_number", e.target.value)
+                              updateButton(
+                                btn.id,
+                                "phone_number",
+                                e.target.value
+                              )
                             }
                           />
                         </div>
@@ -507,37 +540,6 @@ export default function AddTemplate() {
           </div>
 
           <div className="space-y-4">
-            {/* <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  Template Guidelines
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-3 text-muted-foreground">
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
-                  <span>Template names must be lowercase with underscores</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
-                  <span>Marketing templates need clear opt-out option</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
-                  <span>Avoid promotional language in Utility templates</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
-                  <span>Use variables for personalization</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
-                  <span>Buttons: max 3, text ≤ 30 chars</span>
-                </div>
-              </CardContent>
-            </Card> */}
-
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Phone Preview</CardTitle>
@@ -552,6 +554,7 @@ export default function AddTemplate() {
                   headerImage={headerImage}
                   body={body}
                   footer={footer}
+                  buttons={buttons.filter((btn) => btn.text.trim())}
                 />
               </CardContent>
             </Card>

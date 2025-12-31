@@ -1,11 +1,17 @@
 import { cn } from "@/lib/utils";
 
+interface ButtonType {
+  type: "quick_reply" | "url" | "phone_number";
+  text: string;
+}
+
 interface PhonePreviewProps {
   headerType?: string;
   headerText?: string;
   headerImage?: string;
   body: string;
   footer?: string;
+  buttons?: ButtonType[];
   className?: string;
 }
 
@@ -15,6 +21,7 @@ export function PhonePreview({
   headerImage,
   body,
   footer,
+  buttons,
   className,
 }: PhonePreviewProps) {
   return (
@@ -71,6 +78,21 @@ export function PhonePreview({
                     <p className="text-gray-400 text-xs mt-2 pt-1 border-t border-gray-600">
                       {footer}
                     </p>
+                  )}
+
+                  {/* Buttons Section */}
+                  {buttons && buttons.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {buttons.map((btn, idx) => (
+                        <button
+                          key={idx}
+                          disabled
+                          className="text-xs bg-gray-700 text-white rounded px-2 py-1 max-w-full truncate text-left disabled:opacity-80"
+                        >
+                          {btn.text}
+                        </button>
+                      ))}
+                    </div>
                   )}
                   
                   <div className="flex justify-end mt-1">

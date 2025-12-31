@@ -148,7 +148,7 @@ export default function ManageTemplates() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create template");
+      if (!res.ok) throw new Error("Failed to create template from frontend");
       return res.json();
     },
     onSuccess: (template) => {
@@ -161,7 +161,7 @@ export default function ManageTemplates() {
       });
     },
     onError: () => {
-      toast.error("Failed to create template");
+      toast.error("Failed to create template from frontend");
     },
   });
 
