@@ -1677,6 +1677,10 @@ export async function registerRoutes(
     }
   });
 
+  function shortSuffix(length = 4) {
+  return Math.random().toString(36).substring(2, 2 + length);
+}
+
   app.post("/api/templates", async (req, res) => {
     try {
       // For image headers, headerImage is the Meta media ID — store it as-is
@@ -1760,7 +1764,7 @@ export async function registerRoutes(
           const metaPayload = buildMetaTemplate(template);
 
           // Generate a unique name for WhatsApp (avoid "content exists" error)
-          const uniqueMetaName = `${metaPayload.name}_${Date.now()}`;
+          const uniqueMetaName = `${metaPayload.name}_${shortSuffix(4)}`;
           metaPayload.name = uniqueMetaName;
 
           const result = await submitMetaTemplate(metaPayload);
