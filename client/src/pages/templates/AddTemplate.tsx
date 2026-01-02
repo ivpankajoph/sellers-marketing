@@ -56,20 +56,64 @@ export default function AddTemplate() {
   const [footer, setFooter] = useState("");
   const [buttons, setButtons] = useState<ButtonType[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [headerMediaHandle, setHeaderMediaHandle] = useState<string | null>(
+    null
+  ); // Meta
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    /* ===============================
+     1️⃣ Client-side validation
+     =============================== */
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Image must be less than 5MB");
       return;
     }
 
-    setHeaderImageFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setHeaderImage(reader.result as string);
-    reader.readAsDataURL(file);
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      toast.error("Only JPG and PNG images are allowed");
+      return;
+    }
+
+    /* ===============================
+     2️⃣ Upload to backend
+     =============================== */
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload/template-header", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error || "Upload failed");
+      }
+
+      const { previewUrl, mediaHandle } = await res.json();
+
+      /* ===============================
+       3️⃣ Store BOTH values
+       =============================== */
+
+      // 🔹 For UI preview only
+      setHeaderImage(previewUrl);
+
+      // 🔹 REQUIRED for Meta template approval
+      setHeaderMediaHandle(mediaHandle);
+
+      // Optional: keep original file if needed
+      setHeaderImageFile(file);
+
+      toast.success("Image uploaded successfully");
+    } catch (err: any) {
+      console.error("[Header Image Upload Failed]", err);
+      toast.error(err.message || "Image upload failed");
+    }
   };
 
   const removeImage = () => {
@@ -110,7 +154,9 @@ export default function AddTemplate() {
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error || "Failed to create template from frontend");
+        throw new Error(
+          error.error || "Failed to create template from frontend"
+        );
       }
       return res.json();
     },
@@ -150,7 +196,9 @@ export default function AddTemplate() {
       .map((btn) => ({
         type: btn.type,
         text: btn.text.trim(),
-        ...(btn.type === "url" && { url: btn.url?.trim() || "https://example.com" }),
+        ...(btn.type === "url" && {
+          url: btn.url?.trim() || "https://example.com",
+        }),
         ...(btn.type === "phone_number" && {
           phone_number: btn.phone_number?.trim() || "+1234567890",
         }),
@@ -162,7 +210,7 @@ export default function AddTemplate() {
       language,
       headerType: headerType === "none" ? null : headerType,
       headerText: headerType === "text" ? headerText : null,
-      headerImage: headerType === "image" ? headerImage : null,
+      headerImage: headerType === "image" ? headerMediaHandle : null,
       content: body,
       footer: footer || null,
       buttons: validButtons.length > 0 ? validButtons : undefined,
@@ -392,7 +440,13 @@ export default function AddTemplate() {
                 <div className="grid gap-2">
                   <div className="flex justify-between items-center">
                     <Label htmlFor="body">Body Text *</Label>
-                    <span className={`text-xs ${body.length >= 1000 ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                    <span
+                      className={`text-xs ${
+                        body.length >= 1000
+                          ? "text-red-600 font-medium"
+                          : "text-muted-foreground"
+                      }`}
+                    >
                       {body.length}/1000
                     </span>
                   </div>
@@ -411,7 +465,8 @@ export default function AddTemplate() {
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Use {"{{1}}"}, {"{{2}}"} etc. for dynamic variables. Keep under 1000 characters.
+                    Use {"{{1}}"}, {"{{2}}"} etc. for dynamic variables. Keep
+                    under 1000 characters.
                   </p>
                 </div>
 

@@ -471,7 +471,7 @@ const TemplateSchema = new Schema(
     metaTemplateId: String,
     metaStatus: {
       type: String,
-      enum: ["draft", "pending", "approved", "rejected"],
+      enum: ["draft", "pending", "approved", "rejected","PENDING", "APPROVED", "REJECTED",],
       default: "pending",
     },
 

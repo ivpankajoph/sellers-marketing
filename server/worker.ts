@@ -858,6 +858,9 @@ export function buildMetaTemplate(template: any) {
       type: "HEADER",
       format: "TEXT",
       text: template.headerText,
+      example: {
+        header_text: ["Sample Header"],
+      },
     });
   }
 
@@ -916,6 +919,7 @@ export function buildMetaTemplate(template: any) {
             type: "URL",
             text: btn.text,
             url: btn.url,
+            example: ["https://sellerslogin.com"],
           };
         }
 
@@ -933,7 +937,7 @@ export function buildMetaTemplate(template: any) {
   return {
     name: template.name,
     category: template.category.toUpperCase(),
-    language: template.language || "en",
+    language: template.language || "en_US",
     components,
   };
 }
