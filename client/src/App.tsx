@@ -1,4 +1,3 @@
-
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -317,7 +316,6 @@ function Router() {
         {() => <ProtectedRoute component={AiUsageDashboard} />}
       </Route>
 
-
       <Route path="/contactusagedashboard">
         {() => <ProtectedRoute component={ContactUsageDetail} />}
       </Route>
@@ -330,8 +328,12 @@ function Router() {
         {() => <ProtectedRoute component={UserManagementDashboard} />}
       </Route>
 
-       <Route path="/fblead-automation-report">
+      <Route path="/fblead-automation-report">
         {() => <ProtectedRoute component={FBLeadAutomationReport} />}
+      </Route>
+
+      <Route path="/campaigns/past">
+        {() => <ProtectedRoute component={Single} />}
       </Route>
 
       <Route path="/register">

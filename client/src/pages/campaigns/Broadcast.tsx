@@ -49,6 +49,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import Swal from "sweetalert2"; // ✅ Added SweetAlert2
 
 interface Contact {
   id: string;
@@ -93,20 +94,24 @@ interface SavedContact {
   source?: string;
 }
 
+// Define response shape for type safety
+interface BroadcastResponse {
+  successful: number;
+  failed: number;
+  error?: string;
+  failedContacts?: Array<{ name: string; phone: string }>;
+}
+
 export default function Broadcast() {
   const [, setLocation] = useLocation();
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
-  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>(
-    []
-  );
+  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>([]);
   const [message, setMessage] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedTemplateName, setSelectedTemplateName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [messageType, setMessageType] = useState<
-    "template" | "custom" | "ai_agent"
-  >("template");
+  const [messageType, setMessageType] = useState<"template" | "custom" | "ai_agent">("template");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isScheduled, setIsScheduled] = useState(false);
   const [selectedListId, setSelectedListId] = useState("");
@@ -289,7 +294,12 @@ export default function Broadcast() {
   const handleSendBroadcast = async () => {
     // VALIDATION: Campaign name is now REQUIRED
     if (!campaignName.trim()) {
-      toast.error("Campaign name is required! Please enter a campaign name.");
+      Swal.fire({
+        icon: "error",
+        title: "Missing Campaign Name",
+        text: "Please enter a campaign name to track your broadcast.",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
@@ -309,35 +319,64 @@ export default function Broadcast() {
     }
 
     if (targetContacts.length === 0) {
-      toast.error("Please select contacts or import from Excel");
+      Swal.fire({
+        icon: "error",
+        title: "No Contacts Selected",
+        text: "Please select contacts, import from Excel, or choose a list.",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
     if (messageType === "template" && !selectedTemplateId) {
-      toast.error("Please select a template");
+      Swal.fire({
+        icon: "error",
+        title: "Template Required",
+        text: "Please select a WhatsApp template.",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
     if (messageType === "custom" && !message.trim()) {
-      toast.error("Please enter a message");
+      Swal.fire({
+        icon: "error",
+        title: "Message Required",
+        text: "Please enter your custom message.",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
     if (messageType === "ai_agent" && !selectedAgentId) {
-      toast.error("Please select an AI agent");
+      Swal.fire({
+        icon: "error",
+        title: "AI Agent Required",
+        text: "Please select an active AI agent.",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
-    // Handle scheduling validation
     if (isScheduled) {
       if (!scheduledTime) {
-        toast.error("Please select a schedule time");
+        Swal.fire({
+          icon: "error",
+          title: "Schedule Time Missing",
+          text: "Please select a future date and time.",
+          confirmButtonText: "OK",
+        });
         return;
       }
       const scheduledDate = new Date(scheduledTime);
       const now = new Date();
       if (scheduledDate <= now) {
-        toast.error("Scheduled time must be in the future");
+        Swal.fire({
+          icon: "error",
+          title: "Invalid Time",
+          text: "Scheduled time must be in the future.",
+          confirmButtonText: "OK",
+        });
         return;
       }
     }
@@ -346,13 +385,19 @@ export default function Broadcast() {
 
     const userDataString = localStorage.getItem("whatsapp_auth_user");
     if (!userDataString) {
-      alert("User not logged in");
-
+      Swal.fire({
+        icon: "error",
+        title: "Not Logged In",
+        text: "User session missing. Please log in again.",
+        confirmButtonText: "OK",
+      });
+      setIsSending(false);
       return;
     }
 
     const userData = JSON.parse(userDataString);
     const userId = userData.id;
+
     try {
       const payload = {
         contacts: targetContacts,
@@ -379,32 +424,55 @@ export default function Broadcast() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result: BroadcastResponse = await res.json();
       console.log("📥 Broadcast response:", result);
 
       if (!res.ok) {
-        toast.error(result.error || `Failed to send broadcast (${res.status})`);
+        Swal.fire({
+          icon: "error",
+          title: "Broadcast Failed",
+          text: result.error || `Failed to send broadcast (${res.status})`,
+          confirmButtonText: "OK",
+        });
         setIsSending(false);
         return;
       }
 
+      // ✅ SUCCESS: Show Swal alert based on result
       if (isScheduled) {
-        toast.success(
-          `Broadcast scheduled successfully for ${new Date(
-            scheduledTime
-          ).toLocaleString()}`
-        );
+        Swal.fire({
+          icon: "success",
+          title: "Broadcast Scheduled!",
+          text: `Your message will be sent on ${new Date(scheduledTime).toLocaleString()}`,
+          confirmButtonText: "OK",
+        });
       } else if (result.failed > 0) {
-        toast.warning(
-          `Broadcast partially sent: ${result.successful} successful, ${result.failed} failed`
-        );
+        let htmlMessage = `<p><strong>${result.successful}</strong> messages sent successfully.</p>
+                          <p><strong>${result.failed}</strong> failed.</p>`;
+
+        if (result.failedContacts && result.failedContacts.length > 0) {
+          const failedList = result.failedContacts
+            .map((c) => `${c.name} (${c.phone})`)
+            .join("<br>");
+          htmlMessage += `<br><strong>Failed contacts:</strong><br>${failedList}`;
+        }
+
+        Swal.fire({
+          icon: "warning",
+          title: "Partially Sent",
+          html: htmlMessage,
+          confirmButtonText: "Close",
+        });
       } else {
-        toast.success(
-          `Broadcast sent successfully to ${result.successful} contacts`
-        );
+        Swal.fire({
+          icon: "success",
+          title: "Broadcast Sent!",
+          text: `Successfully delivered to ${result.successful} contacts.`,
+          confirmButtonText: "Great!",
+        });
       }
 
-      // Reset form
+      // Reset form after success
       setSelectedContactIds([]);
       setImportedContacts([]);
       setCampaignName("");
@@ -413,10 +481,15 @@ export default function Broadcast() {
       setMessage("");
       setIsScheduled(false);
       setScheduledTime("");
-      setIsSending(false);
     } catch (error: any) {
       console.error("❌ Broadcast error:", error);
-      toast.error(error.message || "Failed to send broadcast");
+      Swal.fire({
+        icon: "error",
+        title: "Unexpected Error",
+        text: error.message || "Failed to send broadcast. Please try again.",
+        confirmButtonText: "OK",
+      });
+    } finally {
       setIsSending(false);
     }
   };
@@ -460,12 +533,10 @@ export default function Broadcast() {
           </p>
         </div>
 
-        {/* CAMPAIGN NAME - NOW REQUIRED */}
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <strong>Campaign name is required</strong> to track and analyze your
-            broadcasts.
+            <strong>Campaign name is required</strong> to track and analyze your broadcasts.
           </AlertDescription>
         </Alert>
 
@@ -477,11 +548,7 @@ export default function Broadcast() {
             placeholder="e.g., Black Friday Sale, Product Launch 2024"
             value={campaignName}
             onChange={(e) => setCampaignName(e.target.value)}
-            className={
-              !campaignName.trim()
-                ? "border-red-300 focus-visible:ring-red-500"
-                : ""
-            }
+            className={!campaignName.trim() ? "border-red-300 focus-visible:ring-red-500" : ""}
           />
           {!campaignName.trim() && (
             <p className="text-sm text-red-500">
@@ -498,8 +565,7 @@ export default function Broadcast() {
                 1. Select Audience
               </CardTitle>
               <CardDescription>
-                Choose who will receive this message. Selected: {totalSelected}{" "}
-                contacts
+                Choose who will receive this message. Selected: {totalSelected} contacts
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -757,8 +823,7 @@ export default function Broadcast() {
                       onChange={(e) => setMessage(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Note: Custom messages require the recipient to have
-                      messaged you first (24-hour window rule).
+                      Note: Custom messages require the recipient to have messaged you first (24-hour window rule).
                     </p>
                   </div>
                   {message && (
@@ -798,8 +863,7 @@ export default function Broadcast() {
                     </Select>
                     {selectedAgentId && (
                       <p className="text-sm text-muted-foreground">
-                        The AI agent will generate personalized messages for
-                        each recipient using the hello_world template.
+                        The AI agent will generate personalized messages for each recipient using the hello_world template.
                       </p>
                     )}
                   </div>
@@ -810,9 +874,7 @@ export default function Broadcast() {
                 <Checkbox
                   id="schedule"
                   checked={isScheduled}
-                  onCheckedChange={(checked) =>
-                    setIsScheduled(checked === true)
-                  }
+                  onCheckedChange={(checked) => setIsScheduled(checked === true)}
                 />
                 <Label htmlFor="schedule" className="cursor-pointer">
                   Schedule for later

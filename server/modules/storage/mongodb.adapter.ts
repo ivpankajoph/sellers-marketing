@@ -446,6 +446,7 @@ const ButtonSchema = new Schema(
 
 const TemplateSchema = new Schema(
   {
+    id: { type: String, required: true, unique: true },
     name: { type: String, required: true, unique: true },
     category: {
       type: String,
@@ -466,12 +467,12 @@ const TemplateSchema = new Schema(
     footer: String,
 
     buttons: [ButtonSchema],
-
+    status: { type: String, default: "pending" },
     metaTemplateId: String,
     metaStatus: {
       type: String,
       enum: ["draft", "pending", "approved", "rejected"],
-      default: "draft",
+      default: "pending",
     },
 
     metaRejectionReason: String,

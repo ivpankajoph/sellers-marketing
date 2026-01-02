@@ -197,6 +197,157 @@ function getWhatsAppCredentials(): {
 //   };
 // }
 
+// export async function sendTemplateMessage(
+//   to: string,
+//   template: TemplateConfig
+// ): Promise<{ success: boolean; error?: string; messageId?: string }> {
+//   console.log("[TemplateMessage] ===== START =====");
+//   console.log("[TemplateMessage] To:", to);
+//   console.log(
+//     "[TemplateMessage] Raw template config:",
+//     JSON.stringify(template, null, 2)
+//   );
+
+//   const credentials = getWhatsAppCredentials();
+
+//   if (!credentials) {
+//     console.error("[TemplateMessage] WhatsApp credentials not configured");
+//     return { success: false, error: "WhatsApp credentials not configured" };
+//   }
+
+//   // Meta requires lowercase + underscores
+//   const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, "_");
+
+//   const languageCodesToTry = Array.from(
+//     new Set([template.languageCode, "en", "en_US", "en_GB"].filter(Boolean))
+//   );
+
+//   console.log("[TemplateMessage] Normalized template name:", metaTemplateName);
+//   console.log("[TemplateMessage] Language fallback order:", languageCodesToTry);
+
+//   for (const langCode of languageCodesToTry) {
+//     console.log("--------------------------------------------");
+//     console.log(`[TemplateMessage] Attempting language: ${langCode}`);
+
+//     /** ✅ ENSURE BODY PARAMETERS EXIST */
+//     const components = template.components?.length
+//       ? template.components
+//       : [
+//           {
+//             type: "body",
+//             parameters: [
+//               {
+//                 type: "text",
+//                 text: "there", // default fallback for {{1}}
+//               },
+//             ],
+//           },
+//         ];
+
+//     /** ❌ BLOCK UNDEFINED / EMPTY PARAMS */
+//     for (const component of components) {
+//       if (component.parameters) {
+//         for (const param of component.parameters) {
+//           if (
+//             !param ||
+//             param.text === undefined ||
+//             param.text === null ||
+//             param.text === ""
+//           ) {
+//             console.error(
+//               "[TemplateMessage] ❌ Invalid template parameter detected:",
+//               param
+//             );
+//             return {
+//               success: false,
+//               error: "Invalid WhatsApp template parameters",
+//             };
+//           }
+//         }
+//       }
+//     }
+
+//     const messagePayload = {
+//       messaging_product: "whatsapp",
+//       recipient_type: "individual",
+//       to,
+//       type: "template",
+//       template: {
+//         name: metaTemplateName,
+//         language: { code: langCode },
+//         components,
+//       },
+//     };
+
+//     console.log(
+//       "[TemplateMessage] Payload:",
+//       JSON.stringify(messagePayload, null, 2)
+//     );
+
+//     try {
+//       const response = await fetch(
+//         `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+//         {
+//           method: "POST",
+//           headers: {
+//             Authorization: `Bearer ${credentials.token}`,
+//             "Content-Type": "application/json",
+//           },
+//           body: JSON.stringify(messagePayload),
+//         }
+//       );
+
+//       const responseText = await response.text();
+//       const data = responseText ? JSON.parse(responseText) : {};
+
+//       console.log("[TemplateMessage] HTTP Status:", response.status);
+//       console.log("[TemplateMessage] Response:", JSON.stringify(data, null, 2));
+
+//       if (response.ok && data?.messages?.[0]?.id) {
+//         console.log(
+//           `[TemplateMessage] ✅ Success | Message ID: ${data.messages[0].id}`
+//         );
+//         console.log("[TemplateMessage] ===== END =====");
+//         return { success: true, messageId: data.messages[0].id };
+//       }
+
+//       const errorMsg = data?.error?.message || "Unknown Meta error";
+//       const errorCode = data?.error?.code;
+
+//       console.error("[TemplateMessage] ❌ Meta Error:", errorMsg, errorCode);
+
+//       /** 🔁 Retry only for template/language mismatch */
+//       if (
+//         errorCode === 132001 ||
+//         errorMsg.toLowerCase().includes("language") ||
+//         errorMsg.toLowerCase().includes("does not exist")
+//       ) {
+//         console.log(`[TemplateMessage] Retrying with next language...`);
+//         continue;
+//       }
+
+//       console.log("[TemplateMessage] ===== END =====");
+//       return { success: false, error: errorMsg };
+//     } catch (error) {
+//       console.error("[TemplateMessage] ❌ Fetch Exception:", error);
+//       return {
+//         success: false,
+//         error: error instanceof Error ? error.message : "Unknown error",
+//       };
+//     }
+//   }
+
+//   console.error(
+//     `[TemplateMessage] ❌ Template "${metaTemplateName}" not found in any language`
+//   );
+//   console.log("[TemplateMessage] ===== END =====");
+
+//   return {
+//     success: false,
+//     error: `Template "${metaTemplateName}" not found in Meta`,
+//   };
+// }
+
 export async function sendTemplateMessage(
   to: string,
   template: TemplateConfig
@@ -229,45 +380,54 @@ export async function sendTemplateMessage(
     console.log("--------------------------------------------");
     console.log(`[TemplateMessage] Attempting language: ${langCode}`);
 
-    /** ✅ ENSURE BODY PARAMETERS EXIST */
-    const components = template.components?.length
-      ? template.components
-      : [
-          {
-            type: "body",
-            parameters: [
-              {
-                type: "text",
-                text: "there", // default fallback for {{1}}
-              },
-            ],
-          },
-        ];
+    /**
+     * 🎯 CRITICAL FIX: Handle both cases properly
+     * - If components exist and have parameters → send them
+     * - If components exist but are empty → send empty array (template has variables but none provided)
+     * - If no components at all → don't include components field (template has no variables)
+     */
+    let components: any[] | undefined = undefined;
+    
+    if (template.components) {
+      // Components field exists - check if it has actual parameters
+      const hasValidParams = template.components.some(
+        (comp) => comp.parameters && comp.parameters.length > 0
+      );
 
-    /** ❌ BLOCK UNDEFINED / EMPTY PARAMS */
-    for (const component of components) {
-      if (component.parameters) {
-        for (const param of component.parameters) {
-          if (
-            !param ||
-            param.text === undefined ||
-            param.text === null ||
-            param.text === ""
-          ) {
-            console.error(
-              "[TemplateMessage] ❌ Invalid template parameter detected:",
-              param
-            );
-            return {
-              success: false,
-              error: "Invalid WhatsApp template parameters",
-            };
+      if (hasValidParams) {
+        // ✅ Validate parameters
+        for (const component of template.components) {
+          if (component.parameters) {
+            for (const param of component.parameters) {
+              if (
+                !param ||
+                param.text === undefined ||
+                param.text === null ||
+                param.text === ""
+              ) {
+                console.error(
+                  "[TemplateMessage] ❌ Invalid template parameter:",
+                  param
+                );
+                return {
+                  success: false,
+                  error: "Invalid WhatsApp template parameters",
+                };
+              }
+            }
           }
         }
+        components = template.components;
+      } else {
+        // Components array exists but is empty/has no params
+        // This means template expects variables but none were provided
+        components = template.components;
       }
     }
+    // If template.components is undefined/null, components stays undefined
+    // This means the template has no variables at all
 
-    const messagePayload = {
+    const messagePayload: any = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
@@ -275,7 +435,7 @@ export async function sendTemplateMessage(
       template: {
         name: metaTemplateName,
         language: { code: langCode },
-        components,
+        ...(components !== undefined ? { components } : {}),
       },
     };
 
@@ -316,16 +476,28 @@ export async function sendTemplateMessage(
 
       console.error("[TemplateMessage] ❌ Meta Error:", errorMsg, errorCode);
 
-      /** 🔁 Retry only for template/language mismatch */
+      /**
+       * 🔁 Handle different error cases
+       */
+      // Language/template not found - try next language
       if (
         errorCode === 132001 ||
-        errorMsg.toLowerCase().includes("language") ||
         errorMsg.toLowerCase().includes("does not exist")
       ) {
-        console.log(`[TemplateMessage] Retrying with next language...`);
+        console.log("[TemplateMessage] Template not found, trying next language...");
         continue;
       }
 
+      // Parameter mismatch - this is a real error, don't retry
+      if (errorCode === 132000 || errorMsg.toLowerCase().includes("parameters does not match")) {
+        console.error("[TemplateMessage] ❌ Parameter mismatch - check template variables");
+        return { 
+          success: false, 
+          error: `${errorMsg}. Template requires variables but none/incorrect were provided.` 
+        };
+      }
+
+      // Other errors - don't retry
       console.log("[TemplateMessage] ===== END =====");
       return { success: false, error: errorMsg };
     } catch (error) {

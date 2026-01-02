@@ -1557,36 +1557,38 @@ export async function registerRoutes(
   });
 
   app.post("/api/templates", async (req, res) => {
-  try {
-    let headerImageUrl = null;
+    try {
+      let headerImageUrl = null;
 
-    if (req.body.headerType === "image") {
-      if (!req.body.headerImage) {
-        return res.status(400).json({ error: "Header image required" });
+      if (req.body.headerType === "image") {
+        if (!req.body.headerImage) {
+          return res.status(400).json({ error: "Header image required" });
+        }
+        headerImageUrl = await uploadHeaderImage(req.body.headerImage);
       }
-      headerImageUrl = await uploadHeaderImage(req.body.headerImage);
+      console.log("[TemplateCreate] creating template:", req.body.name);
+
+      const template = await mongodb.Template.create({
+        id: uuidv4(),
+        name: req.body.name,
+        category: req.body.category,
+        language: req.body.language,
+        headerType: req.body.headerType,
+        content: req.body.content,
+        headerText: req.body.headerText,
+        headerImageUrl,
+        body: req.body.body,
+        footer: req.body.footer,
+        buttons: req.body.buttons,
+        status: req.body.status,
+      });
+
+      res.status(201).json(template);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    const template = await mongodb.Template.create({
-      name: req.body.name,
-      category: req.body.category,
-      language: req.body.language,
-      headerType: req.body.headerType,
-      headerText: req.body.headerText,
-      headerImageUrl,
-      body: req.body.body,
-      footer: req.body.footer,
-      buttons: req.body.buttons,
-      status: req.body.status,
-    });
-
-    res.status(201).json(template);
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
+  });
 
   app.put("/api/templates/:id", async (req, res) => {
     try {
@@ -1845,6 +1847,7 @@ export async function registerRoutes(
             name: metaTemplate.name,
             category: (metaTemplate.category || "utility").toLowerCase() as any,
             content: content,
+
             variables: variables,
           });
           await storage.updateTemplate(newTemplate.id, {
@@ -1896,13 +1899,13 @@ export async function registerRoutes(
       return res.status(404).json({ message: "Template not found" });
     }
 
-    const validationErrors = validateMetaTemplate(template);
-    if (validationErrors.length) {
-      return res.status(400).json({
-        message: "Template validation failed",
-        errors: validationErrors,
-      });
-    }
+    // const validationErrors = validateMetaTemplate(template);
+    // if (validationErrors.length) {
+    //   return res.status(400).json({
+    //     message: "Template validation failed",
+    //     errors: validationErrors,
+    //   });
+    // }
 
     const metaTemplate = buildMetaTemplate(template);
 
@@ -2342,4 +2345,11 @@ export async function registerRoutes(
   broadcastService.startScheduler();
 
   return httpServer;
+}
+function uuidv4(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
