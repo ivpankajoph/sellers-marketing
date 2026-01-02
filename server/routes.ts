@@ -284,6 +284,7 @@ export async function registerRoutes(
     }
 
     const campaign = await mongodb.Campaign.create({
+      id: uuidv4(),
       name,
       contacts: normalizedContacts,
       steps: steps.map((s: any, i: number) => ({
@@ -1678,8 +1679,10 @@ export async function registerRoutes(
   });
 
   function shortSuffix(length = 4) {
-  return Math.random().toString(36).substring(2, 2 + length);
-}
+    return Math.random()
+      .toString(36)
+      .substring(2, 2 + length);
+  }
 
   app.post("/api/templates", async (req, res) => {
     try {

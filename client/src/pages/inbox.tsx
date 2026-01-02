@@ -40,6 +40,7 @@ import {
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 interface Contact {
   id: string;
@@ -362,7 +363,7 @@ export default function Inbox() {
       replyToMessageId?: string;
       replyToContent?: string;
     }) => {
-      const waRes = await fetch("/api/webhook/whatsapp/send", {
+      const waRes = await fetchWithAuth("/api/webhook/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

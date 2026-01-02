@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -9,7 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Send, Phone, User, Loader2, Bot, MessageSquare, FileText } from "lucide-react";
-import { toast } from "sonner";
+import Swal from "sweetalert2";
+
+// Minimal country list (you can expand as needed)
+const countries = [
+  { code: "91", label: "+91", name: "India" },
+  { code: "1", label: "+1", name: "USA/Canada" },
+  { code: "44", label: "+44", name: "UK" },
+  { code: "61", label: "+61", name: "Australia" },
+  // Add more if needed
+];
 
 interface Template {
   id: string;
@@ -32,6 +41,7 @@ export default function Single() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [messageType, setMessageType] = useState<"template" | "custom" | "ai_agent">("template");
+  const [countryCode, setCountryCode] = useState("91"); // WhatsApp requires '91', not '+91'
 
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ["/api/templates"],
@@ -69,14 +79,28 @@ export default function Single() {
     },
     onSuccess: (result) => {
       if (result.success) {
-        toast.success("Message sent successfully!");
+        Swal.fire({
+          icon: "success",
+          title: "Message sent!",
+          text: "Your message was delivered successfully.",
+          timer: 2000,
+          showConfirmButton: false,
+        });
         handleClearForm();
       } else {
-        toast.error(result.error || "Failed to send message");
+        Swal.fire({
+          icon: "error",
+          title: "Sending failed",
+          text: result.error || "An unknown error occurred.",
+        });
       }
     },
     onError: (error: Error) => {
-      toast.error(error.message);
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: error.message || "Failed to send message.",
+      });
     },
   });
 
@@ -98,30 +122,35 @@ export default function Single() {
 
   const handleSendMessage = () => {
     if (!phone.trim()) {
-      toast.error("Please enter a phone number");
+      Swal.fire("Error", "Please enter a phone number", "error");
       return;
     }
 
     if (messageType === "template" && !selectedTemplateId) {
-      toast.error("Please select a template");
+      Swal.fire("Error", "Please select a template", "error");
       return;
     }
 
     if (messageType === "custom" && !message.trim()) {
-      toast.error("Please enter a message");
+      Swal.fire("Error", "Please enter a message", "error");
       return;
     }
 
     if (messageType === "ai_agent" && !selectedAgentId) {
-      toast.error("Please select an AI agent");
+      Swal.fire("Error", "Please select an AI agent", "error");
       return;
     }
 
+    // Combine country code (without +) and phone number
+    const fullPhoneNumber = countryCode + phone.replace(/\D/g, ""); // remove non-digits for safety
+
     sendMessageMutation.mutate({
-      phone,
+      phone: fullPhoneNumber, // e.g., "919876543210"
       name: recipientName,
       messageType,
-      templateName: messageType === "template" ? (templates.find(t => t.id === selectedTemplateId)?.name || "hello_world") : undefined,
+      templateName: messageType === "template" 
+        ? (templates.find(t => t.id === selectedTemplateId)?.name || "hello_world") 
+        : undefined,
       customMessage: messageType === "custom" ? message : undefined,
       agentId: messageType === "ai_agent" ? selectedAgentId : undefined,
     });
@@ -144,14 +173,30 @@ export default function Single() {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label>Phone Number *</Label>
-                <div className="relative">
-                  <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="+91 98765 43210" 
-                    className="pl-9"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
+                <div className="flex gap-2">
+                  <Select value={countryCode} onValueChange={setCountryCode}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue>
+                        {countries.find(c => c.code === countryCode)?.label || "+91"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countries.map((country) => (
+                        <SelectItem key={country.code} value={country.code}>
+                          {country.label} ({country.name})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      placeholder="98765 43210" 
+                      className="pl-9"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
               

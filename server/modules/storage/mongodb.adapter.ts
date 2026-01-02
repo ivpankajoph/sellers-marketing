@@ -363,6 +363,7 @@ const StepSchema = new mongoose.Schema(
 
 const CampaignSchema = new mongoose.Schema(
   {
+    id: { type: String, unique: true },
     name: String,
 
     status: {

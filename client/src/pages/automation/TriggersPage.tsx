@@ -477,9 +477,12 @@ export default function LeadManager() {
                           onChange={(e) =>
                             handleTemplateChange(form, e.target.value)
                           }
+                          disabled={form.automation_active}
                         >
                           <option value="" disabled>
-                            Select a Template
+                            {form.automation_active
+                              ? "Stop automation to change"
+                              : "Select a Template"}
                           </option>
                           {templates.map((t: { id: string; name: string }) => (
                             <option key={t.id} value={t.id}>
