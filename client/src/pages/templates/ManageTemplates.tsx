@@ -476,24 +476,20 @@ export default function ManageTemplates() {
                             template.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {template.variables.slice(0, 3).map((v) => (
-                            <Badge
-                              key={v}
-                              variant="secondary"
-                              className="text-xs"
-                            >
-                              {`{{${v}}}`}
-                            </Badge>
-                          ))}
-                          {template.variables.length > 3 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{template.variables.length - 3}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
+                     <TableCell>
+  <div className="flex flex-wrap gap-1">
+    {(template.variables || []).slice(0, 3).map((v) => (
+      <Badge key={v} variant="secondary" className="text-xs">
+        {`{{${v}}}`}
+      </Badge>
+    ))}
+    {(template.variables?.length || 0) > 3 && (
+      <Badge variant="secondary" className="text-xs">
+        +{(template.variables?.length || 0) - 3}
+      </Badge>
+    )}
+  </div>
+</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDate(template.createdAt)}
                       </TableCell>

@@ -449,7 +449,7 @@ const TemplateSchema = new Schema(
     name: { type: String, required: true, unique: true },
     category: {
       type: String,
-      enum: ["MARKETING", "UTILITY", "AUTHENTICATION"],
+      enum: ["MARKETING", "UTILITY", "AUTHENTICATION","marketing", "utility", "authentication"],
       required: true,
     },
     language: { type: String, default: "en" },
