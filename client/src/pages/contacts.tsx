@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
+import Swal from "sweetalert2";
+
 
 interface Contact {
   id: string;
@@ -45,6 +46,10 @@ export default function Contacts() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [formData, setFormData] = useState({ name: "", phone: "", email: "", tags: "", notes: "" });
   const [importData, setImportData] = useState("");
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const contactsPerPage = 10;
 
   const queryClient = useQueryClient();
 
@@ -71,9 +76,27 @@ export default function Contacts() {
     tags: c.tags || [],
     source: c.source || 'import',
   }))];
-  
+
   const isLoading = isLoadingRegular || isLoadingImported;
 
+  // Filter contacts based on search
+  const filteredContacts = contacts.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.phone.includes(searchQuery) ||
+    c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredContacts.length / contactsPerPage);
+  const startIndex = (currentPage - 1) * contactsPerPage;
+  const currentContacts = filteredContacts.slice(startIndex, startIndex + contactsPerPage);
+
+  // Reset to page 1 when search or data changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, contacts]);
+
+  // === Mutations (unchanged except alerts) ===
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await fetch("/api/contacts", {
@@ -88,15 +111,16 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       setIsAddDialogOpen(false);
       setFormData({ name: "", phone: "", email: "", tags: "", notes: "" });
-      toast.success("Contact created successfully");
+      Swal.fire("Success!", "Contact created successfully", "success");
     },
     onError: () => {
-      toast.error("Failed to create contact");
+      Swal.fire("Error!", "Failed to create contact", "error");
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      alert(id);
       const res = await fetch(`/api/contacts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -109,33 +133,33 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       setIsEditDialogOpen(false);
       setSelectedContact(null);
-      toast.success("Contact updated successfully");
+      Swal.fire("Success!", "Contact updated successfully", "success");
     },
     onError: () => {
-      toast.error("Failed to update contact");
+      Swal.fire("Error!", "Failed to update contact", "error");
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (contact: Contact) => {
+    mutationFn: async ({ contact }: { contact: Contact }) => {
       const isImported = contact.source === 'import' || contact.source === 'excel' || contact.source === 'csv';
       const url = isImported 
         ? `/api/broadcast/imported-contacts/${contact.id}`
         : `/api/contacts/${contact.id}`;
       const res = await fetch(url, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete contact");
-      return isImported;
+      return { contact, isImported };
     },
-    onSuccess: (isImported) => {
+    onSuccess: ({ isImported }) => {
       if (isImported) {
         queryClient.invalidateQueries({ queryKey: ["/api/broadcast/imported-contacts"] });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       }
-      toast.success("Contact deleted successfully");
+      Swal.fire("Deleted!", "Contact deleted successfully", "success");
     },
     onError: () => {
-      toast.error("Failed to delete contact");
+      Swal.fire("Error!", "Failed to delete contact", "error");
     },
   });
 
@@ -153,13 +177,14 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       setIsImportDialogOpen(false);
       setImportData("");
-      toast.success(`Imported ${data.imported} contacts successfully`);
+      Swal.fire("Success!", `Imported ${data.imported} contacts successfully`, "success");
     },
     onError: () => {
-      toast.error("Failed to import contacts");
+      Swal.fire("Error!", "Failed to import contacts", "error");
     },
   });
 
+  // === Handlers (unchanged) ===
   const handleAddContact = () => {
     createMutation.mutate({
       name: formData.name,
@@ -198,7 +223,7 @@ export default function Contacts() {
       }).filter(c => c.phone);
       importMutation.mutate(contacts);
     } catch (error) {
-      toast.error("Invalid import format");
+      Swal.fire("Error!", "Invalid import format", "error");
     }
   };
 
@@ -212,7 +237,8 @@ export default function Contacts() {
     a.href = url;
     a.download = "contacts.csv";
     a.click();
-    toast.success("Contacts exported successfully");
+    URL.revokeObjectURL(url);
+    Swal.fire("Success!", "Contacts exported successfully", "success");
   };
 
   const openEditDialog = (contact: Contact) => {
@@ -227,12 +253,6 @@ export default function Contacts() {
     setIsEditDialogOpen(true);
   };
 
-  const filteredContacts = contacts.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.phone.includes(searchQuery) ||
-    c.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
   const getTimeAgo = (date: string) => {
     const diff = Date.now() - new Date(date).getTime();
     const minutes = Math.floor(diff / 60000);
@@ -242,6 +262,13 @@ export default function Contacts() {
     if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
     if (minutes > 0) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
     return "Just now";
+  };
+
+  // Pagination controls
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
   };
 
   return (
@@ -361,7 +388,7 @@ export default function Contacts() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>All Contacts</CardTitle>
-                <CardDescription>Total {contacts.length} contacts in your database.</CardDescription>
+                <CardDescription>Total {filteredContacts.length} contacts found.</CardDescription>
               </div>
               <div className="flex items-center gap-2 w-full md:w-auto">
                 <div className="relative w-64">
@@ -385,74 +412,131 @@ export default function Contacts() {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[250px]">Name</TableHead>
-                    <TableHead>Phone Number</TableHead>
-                    <TableHead>Tags</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredContacts.map((contact) => (
-                    <TableRow key={contact.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                              {contact.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div>{contact.name}</div>
-                            {contact.email && <div className="text-xs text-muted-foreground">{contact.email}</div>}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>{contact.phone}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {contact.tags.map(tag => (
-                            <Badge key={tag} variant="secondary" className="text-xs font-normal">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{getTimeAgo(contact.updatedAt)}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditDialog(contact)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => deleteMutation.mutate(contact)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <>
+                {/* Scrollable Table Container (optional fixed height) */}
+                <div className="overflow-y-auto max-h-[500px] rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[250px]">Name</TableHead>
+                        <TableHead>Phone Number</TableHead>
+                        <TableHead>Tags</TableHead>
+                        <TableHead>Last Updated</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currentContacts.length > 0 ? (
+                        currentContacts.map((contact) => (
+                          <TableRow key={contact.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                    {contact.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div>{contact.name}</div>
+                                  {contact.email && <div className="text-xs text-muted-foreground">{contact.email}</div>}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{contact.phone}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1">
+                                {contact.tags.map(tag => (
+                                  <Badge key={tag} variant="secondary" className="text-xs font-normal">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{getTimeAgo(contact.updatedAt)}</TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openEditDialog(contact)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    className="text-destructive"
+                                    onClick={async () => {
+                                      const result = await Swal.fire({
+                                        title: "Are you sure?",
+                                        text: "You won't be able to revert this!",
+                                        icon: "warning",
+                                        showCancelButton: true,
+                                        confirmButtonText: "Yes, delete it!",
+                                        cancelButtonText: "Cancel",
+                                      });
+
+                                      if (result.isConfirmed) {
+                                        deleteMutation.mutate({ contact });
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            No contacts found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {startIndex + 1}–{Math.min(startIndex + contactsPerPage, filteredContacts.length)} of {filteredContacts.length} contacts
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <span className="flex items-center px-3 text-sm">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
       </div>
 
+      {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>

@@ -11,19 +11,16 @@ import {
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
 import {
-  migrateExistingLeads,
   parallelLimit,
-  processDripCampaigns,
   retry,
-  retryFailedTemplates,
-  retrySend,
-  sendWithLimit,
   syncLeadsForFormMain,
 } from "./worker";
 import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
 const app = express();
 const httpServer = createServer(app);
+
+/* -------------------- EXPRESS SETUP -------------------- */
 
 declare module "http" {
   interface IncomingMessage {
@@ -41,189 +38,205 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      // console.log(logLine);
-    }
-  });
-
-  next();
-});
+/* -------------------- BOOTSTRAP -------------------- */
 
 (async () => {
   await connectToMongoDB();
   await ensureDefaultAdmin();
   await registerRoutes(httpServer, app);
-  // await migrateExistingLeads();
 
-  let isRunning = false;
+  /* =====================================================
+     FORM AUTOMATION CRON (NO REDIS)
+     ===================================================== */
 
-  // Sync form automations every 40 seconds (internal polling, no timezone needed)
+  let formSyncRunning = false;
+
   cron.schedule("*/40 * * * * *", async () => {
-    if (isRunning) {
-      console.log("⏭ Skipping form sync cron — previous run still in progress");
+    if (formSyncRunning) {
+      console.log("⏭ Skipping form sync — already running");
       return;
     }
 
-    isRunning = true;
+    formSyncRunning = true;
 
     try {
-      console.log("🔄 Running scheduled form sync...");
-      const activeAutomations = await FormAutomation.find({
+      console.log("🔄 Running form automation sync");
+
+      const automations = await FormAutomation.find({
         automation_active: true,
       });
 
-      for (const automation of activeAutomations) {
+      for (const automation of automations) {
         await syncLeadsForFormMain(automation);
       }
 
-      console.log(`✅ Completed sync for ${activeAutomations.length} forms`);
+      console.log(`✅ Synced ${automations.length} forms`);
     } catch (err) {
-      console.error("❌ Form sync cron error:", err);
+      console.error("❌ Form sync error:", err);
     } finally {
-      isRunning = false;
+      formSyncRunning = false;
     }
   });
 
-  // =============== Drip Campaign Cron (Fixed for IST) ===============
-  let dripCronRunning = false;
+  /* =====================================================
+     DRIP CAMPAIGN CRON — NO REDIS, DB LOCKED
+     ===================================================== */
 
-  cron.schedule(
-    "* * * * *", // Every minute (5 fields → timezone respected)
-    async () => {
-      if (dripCronRunning) {
-        console.log(
-          "[CRON] ⏭ Skipping drip campaign — previous run still in progress"
-        );
-        return;
-      }
+  const STUCK_TIMEOUT_MIN = 10;
 
-      dripCronRunning = true;
-      const jobStart = new Date();
+  // cron.schedule(
+  //    "*/12 * * * * *",
+  //   async () => {
+  //     const now = new Date();
 
-      try {
-        // Get current time in IST for logging and comparison
-        const nowIST = new Date();
-        console.log(
-          "\n[CRON] 🕒 Drip campaign job started at IST:",
-          nowIST.toLocaleString("en-IN", {
-            timeZone: "Asia/Kolkata",
-            hour12: true,
-          })
-        );
+  //     try {
+  //       console.log(
+  //         "\n[CRON] 🕒 Drip job @",
+  //         now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+  //       );
 
-        const campaigns = await Campaign.find({
-          status: "running",
-          isProcessing: false,
-          nextRunAt: { $lte: nowIST },
-        });
+  //       /* ---------- RELEASE STUCK LOCKS ---------- */
+  //       await Campaign.updateMany(
+  //         {
+  //           isProcessing: true,
+  //           processingStartedAt: {
+  //             $lte: new Date(Date.now() - STUCK_TIMEOUT_MIN * 60 * 1000),
+  //           },
+  //         },
+  //         { $set: { isProcessing: false } }
+  //       );
 
-        for (const campaign of campaigns) {
-          campaign.isProcessing = true;
-          await campaign.save();
+  //       /* ---------- FETCH ELIGIBLE IDS ---------- */
+  //       const campaignIds = await Campaign.find(
+  //         {
+  //           status: "running",
+  //           isProcessing: false,
+  //           // nextRunAt: { $lte: now },
+  //         },
+  //         { _id: 1 }
+  //       );
 
-          try {
-            const step = campaign.steps[campaign.currentStep];
-            if (!step) {
-              campaign.status = "completed";
-              await campaign.save();
-              continue;
-            }
+  //       if (!campaignIds.length) {
+  //         console.log("[CRON] ℹ️ No campaigns to process");
+  //         return;
+  //       }
 
-            await parallelLimit(campaign.contacts, 5, async (contact: any) => {
-              const exists = await CampaignLog.findOne({
-                campaignId: campaign._id,
-                stepIndex: campaign.currentStep,
-                contact,
-              });
+  //       console.log(`[CRON] 📦 Found ${campaignIds.length} campaigns`);
 
-              if (exists) return;
+  //       /* ---------- PROCESS EACH CAMPAIGN ---------- */
+  //       for (const { _id } of campaignIds) {
+  //         const campaign = await Campaign.findOneAndUpdate(
+  //           { _id, isProcessing: false },
+  //           {
+  //             $set: {
+  //               isProcessing: true,
+  //               processingStartedAt: new Date(),
+  //             },
+  //           },
+  //           { new: true }
+  //         );
 
-              await retry(() =>
-                sendTemplateMessage(step.template_name!, contact)
-              );
+  //         if (!campaign) continue; // locked by another instance
 
-              await CampaignLog.create({
-                campaignId: campaign._id,
-                stepIndex: campaign.currentStep,
-                contact,
-                sentAt: new Date(),
-              });
-            });
+  //         const campaignStart = Date.now();
 
-            campaign.currentStep++;
+  //         try {
+  //           console.log(`[CAMPAIGN] ▶ ${campaign._id}`);
 
-            const nextStep = campaign.steps[campaign.currentStep];
-            if (!nextStep) {
-              campaign.status = "completed";
-            } else {
-              if (nextStep.scheduleType === "specific") {
-                // Parse as IST by appending +05:30 offset
-                const specificDateTimeStr = `${nextStep.specificDate}T${nextStep.specificTime}:00+05:30`;
-                campaign.nextRunAt = new Date(specificDateTimeStr);
-              } else {
-                // Delay-based: add days + hours in milliseconds
-                campaign.nextRunAt = new Date(
-                  Date.now() +
-                    (nextStep.delayDays * 24 + nextStep.delayHours) *
-                      60 *
-                      60 *
-                      1000
-                );
-              }
-            }
-          } catch (err) {
-            console.error(`[CRON ERROR] Campaign ${campaign._id}:`, err);
-          } finally {
-            campaign.isProcessing = false;
-            await campaign.save();
-          }
-        }
+  //           const step = campaign.steps[campaign.currentStep];
 
-        console.log(
-          `[CRON] ✅ Drip job completed. Took ${
-            Date.now() - jobStart.getTime()
-          }ms`
-        );
-      } catch (err) {
-        console.error("[CRON] ❌ Unhandled error in drip campaign cron:", err);
-      } finally {
-        dripCronRunning = false;
-      }
-    },
-    {
-      timezone: "Asia/Kolkata", // Now fully effective
-    }
-  );
+  //           if (!step) {
+  //             campaign.status = "completed";
+  //             await campaign.save();
+  //             continue;
+  //           }
 
-  // Error-handling middleware
+  //           /* ---------- SEND MESSAGES ---------- */
+  //           await parallelLimit(campaign.contacts, 5, async (contact: any) => {
+  //             try {
+  //               const exists = await CampaignLog.findOne({
+  //                 campaignId: campaign._id,
+  //                 stepIndex: campaign.currentStep,
+  //                 contact,
+  //               });
+
+  //               if (exists) return;
+
+  //               await retry(() =>
+  //                 sendTemplateMessage(step.template_name!, contact)
+  //               );
+
+  //               await CampaignLog.create({
+  //                 campaignId: campaign._id,
+  //                 stepIndex: campaign.currentStep,
+  //                 contact,
+  //                 sentAt: new Date(),
+  //               });
+
+  //               console.log(`[SEND] ✅ ${contact}`);
+  //             } catch (err) {
+  //               console.error(`[SEND ERROR] ❌`, contact, err);
+  //             }
+  //           });
+
+  //           /* ---------- NEXT STEP ---------- */
+  //           campaign.currentStep++;
+
+  //           const nextStep = campaign.steps[campaign.currentStep];
+
+  //           if (!nextStep) {
+  //             campaign.status = "completed";
+  //           } else if (nextStep.scheduleType === "specific") {
+  //             campaign.nextRunAt = new Date(
+  //               `${nextStep.specificDate}T${nextStep.specificTime}:00+05:30`
+  //             );
+  //           } else {
+  //             const delayMs =
+  //               (nextStep.delayDays * 24 + nextStep.delayHours) *
+  //               60 *
+  //               60 *
+  //               1000;
+
+  //             campaign.nextRunAt = new Date(
+  //               campaign.nextRunAt.getTime() + delayMs
+  //             );
+  //           }
+  //         } catch (err) {
+  //           console.error(
+  //             `[CAMPAIGN ERROR] ❌ ${campaign._id}`,
+  //             err
+  //           );
+  //         } finally {
+  //           campaign.isProcessing = false;
+  //           await campaign.save();
+
+  //           console.log(
+  //             `[CAMPAIGN] ⏱ Done ${campaign._id} in ${
+  //               Date.now() - campaignStart
+  //             }ms`
+  //           );
+  //         }
+  //       }
+  //     } catch (err) {
+  //       console.error("[CRON] ❌ Fatal drip error:", err);
+  //     }
+  //   },
+  //   { timezone: "Asia/Kolkata" }
+  // );
+
+  /* =====================================================
+     ERROR HANDLER
+     ===================================================== */
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    // Optional: remove `throw err` in production to avoid crashing
-    // throw err;
+    const status = err.status || 500;
+    res.status(status).json({ message: err.message || "Server Error" });
   });
 
-  // Vite or static serving
+  /* =====================================================
+     STATIC / VITE
+     ===================================================== */
+
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -231,15 +244,12 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
+  /* =====================================================
+     START SERVER
+     ===================================================== */
+
   const port = parseInt(process.env.PORT || "8080", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      console.log(`📡 serving on port ${port}`);
-    }
-  );
+  httpServer.listen({ port, host: "0.0.0.0" }, () => {
+    console.log(`📡 Server running on port ${port}`);
+  });
 })();
