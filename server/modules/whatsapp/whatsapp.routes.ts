@@ -7,7 +7,7 @@ const router = Router();
 
 router.get('/', controller.verifyWebhook);
 router.post('/', controller.handleWebhook);
-router.post('/send', requireAuth, controller.sendMessage);
+router.post('/send', controller.sendMessage);
 router.post('/send-template', requireAuth, controller.sendTemplateMessageEndpoint);
 router.get('/conversations', controller.getConversations);
 router.get('/conversations/:phone', controller.getConversation);

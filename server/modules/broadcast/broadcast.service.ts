@@ -3,6 +3,7 @@ import * as templateService from "../leadAutoReply/templateMessages.service";
 import * as openaiService from "../openai/openai.service";
 import * as aiService from "../ai/ai.service";
 import * as agentService from "../aiAgents/agent.service";
+import { storage } from "server/storage";
 
 export interface BroadcastList {
   id: string;
@@ -13,6 +14,8 @@ export interface BroadcastList {
 }
 
 export interface BroadcastContact {
+  id?: any;
+  contactId?: string;
   name: string;
   phone: string;
   email?: string;
@@ -630,6 +633,7 @@ export async function sendBroadcast(
   for (const contact of contacts) {
     let result: SendMessageResult;
     let messageContent = "";
+    console.log(`[Broadcast] Sending to ${JSON.stringify(contact)}`);
 
     switch (messageType) {
       case "template":
@@ -687,7 +691,38 @@ export async function sendBroadcast(
 
     if (result.success) {
       successful++;
-      //console.log(`[Broadcast] Sent to ${contact.phone} (${contact.name})`);
+      console.log(`[Broadcast] Sent to ${contact.name} (${contact.phone})`);
+
+      try {
+        if (!contact.phone) {
+          console.warn("[Broadcast] No phone number, skipping inbox save");
+          return;
+        }
+
+        const contactdetail = await mongodb.Contact.findOne({
+          phone: contact.phone,
+        });
+
+        if (!contactdetail) {
+          console.warn("[Broadcast] Contact not found in DB", {
+            phone: contact.phone,
+          });
+          return;
+        }
+
+        await storage.createMessage({
+          contactId: contactdetail.id,
+          content: messageContent,
+          type: "text",
+          direction: "outbound",
+          status: "sent",
+        });
+      } catch (saveError) {
+        console.error(
+          "[Broadcast] Failed to save message to conversation:",
+          saveError
+        );
+      }
     } else {
       failed++;
       //console.log(`[Broadcast] Failed for ${contact.phone}: ${result.error}`);
@@ -746,6 +781,7 @@ export async function sendSingleMessage(
 }
 
 export interface ParseResult {
+  contactId?: string;
   contacts: BroadcastContact[];
   totalRows: number;
   validContacts: number;

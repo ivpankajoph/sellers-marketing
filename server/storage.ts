@@ -162,29 +162,71 @@ export class MongoStorage implements IStorage {
     return message || undefined;
   }
 
-  async createMessage(message: InsertMessage): Promise<Message> {
-    const newMessage: Message = {
-      ...message,
-      id: randomUUID(),
-      timestamp: new Date().toISOString(),
-    };
-    await mongodb.insertOne('messages', newMessage);
-    
-    const chat = await this.getChatByContactId(message.contactId);
-    if (chat) {
-      const updateData: Partial<Chat> = {
-        lastMessage: newMessage.content,
-        lastMessageTime: newMessage.timestamp,
-      };
-      if (message.direction === 'inbound') {
-        updateData.lastInboundMessageTime = newMessage.timestamp;
-        updateData.lastInboundMessage = newMessage.content;
-      }
-      await mongodb.updateOne('chats', { id: chat.id }, updateData);
-    }
-    
-    return newMessage;
+ async createMessage(message: InsertMessage): Promise<Message> {
+  console.log("[createMessage] ▶️ Called", {
+    contactId: message.contactId,
+    direction: message.direction,
+    type: message.type,
+  });
+
+  const newMessage: Message = {
+    ...message,
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    await mongodb.insertOne("messages", newMessage);
+    console.log("[createMessage] ✅ Message inserted", {
+      messageId: newMessage.id,
+      contactId: newMessage.contactId,
+    });
+  } catch (err) {
+    console.error("[createMessage] ❌ Failed to insert message", err);
+    throw err;
   }
+
+  let chat;
+  try {
+    chat = await this.getChatByContactId(message.contactId);
+    console.log(
+      `[createMessage] 🔍 Chat lookup for contactId=${message.contactId}:`,
+      chat ? "FOUND" : "NOT FOUND"
+    );
+  } catch (err) {
+    console.error("[createMessage] ❌ Chat lookup failed", err);
+  }
+
+  if (chat) {
+    const updateData: Partial<Chat> = {
+      lastMessage: newMessage.content,
+      lastMessageTime: newMessage.timestamp,
+    };
+
+    if (message.direction === "inbound") {
+      updateData.lastInboundMessageTime = newMessage.timestamp;
+      updateData.lastInboundMessage = newMessage.content;
+    }
+
+    try {
+      await mongodb.updateOne("chats", { id: chat.id }, updateData);
+      console.log("[createMessage] ✅ Chat updated", {
+        chatId: chat.id,
+        lastMessage: newMessage.content,
+      });
+    } catch (err) {
+      console.error("[createMessage] ❌ Failed to update chat", err);
+    }
+  } else {
+    console.warn(
+      "[createMessage] ⚠️ No chat found, message saved but chat not updated",
+      { contactId: message.contactId }
+    );
+  }
+
+  return newMessage;
+}
+
 
   async updateMessage(id: string, message: Partial<Message>): Promise<Message | undefined> {
     const updated = await mongodb.updateOne<Message>('messages', { id }, message);

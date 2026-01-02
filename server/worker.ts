@@ -1,5 +1,5 @@
 import {
-
+  Contact,
   FormAutomation,
   Lead,
   LeadDripStatus,
@@ -14,6 +14,8 @@ import { Types } from "mongoose";
 import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
 import { v2 as cloudinary } from "cloudinary";
+import { uuidv4 } from "./routes";
+import { storage } from "./storage";
 
 const FB_API_VERSION = "v17.0";
 const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
@@ -32,13 +34,13 @@ export async function migrateExistingLeads() {
       { template_sent: { $ne: true } }, // Find leads where template_sent is not true
       { $set: { template_sent: true } }
     );
-    console.log(`Migrated ${result.modifiedCount} existing leads to template_sent: true`);
+    console.log(
+      `Migrated ${result.modifiedCount} existing leads to template_sent: true`
+    );
   } catch (error: any) {
     console.error("Error migrating existing leads:", error.message);
   }
 }
-
-
 
 async function fetchAllLeadsFromFacebook(formId: any) {
   let allLeads: any = [];
@@ -113,8 +115,8 @@ async function getTemplateDetails(templateId: string) {
 
     const template = await Template.findOne({
       $or: [
-        { id: templateId },     // Meta template ID
-        { name: templateId },   // template name
+        { id: templateId }, // Meta template ID
+        { name: templateId }, // template name
       ],
     }).lean();
 
@@ -124,17 +126,11 @@ async function getTemplateDetails(templateId: string) {
     }
 
     // Validation checks (important)
-    if (
-      template.metaStatus !== "APPROVED" &&
-      template.status !== "approved"
-    ) {
-      console.warn(
-        `⚠️ Template found but not approved: ${template.name}`,
-        {
-          status: template.status,
-          metaStatus: template.metaStatus,
-        }
-      );
+    if (template.metaStatus !== "APPROVED" && template.status !== "approved") {
+      console.warn(`⚠️ Template found but not approved: ${template.name}`, {
+        status: template.status,
+        metaStatus: template.metaStatus,
+      });
       return null;
     }
 
@@ -163,7 +159,6 @@ async function getTemplateDetails(templateId: string) {
   }
 }
 
-
 // Build template parameters dynamically based on template structure
 function buildTemplateParameters(template: any, lead: any) {
   const components: any[] = [];
@@ -174,18 +169,18 @@ function buildTemplateParameters(template: any, lead: any) {
       // Check if header has variables
       const headerText = component.text || "";
       const variableCount = (headerText.match(/\{\{(\d+)\}\}/g) || []).length;
-      
+
       if (variableCount > 0) {
         const parameters = [];
         for (let i = 1; i <= variableCount; i++) {
           parameters.push({
             type: "text",
-            text: lead.full_name || "Customer"
+            text: lead.full_name || "Customer",
           });
         }
         components.push({
           type: "header",
-          parameters: parameters
+          parameters: parameters,
         });
       }
     }
@@ -194,14 +189,14 @@ function buildTemplateParameters(template: any, lead: any) {
       // Extract variables from body text
       const bodyText = component.text || "";
       const variableCount = (bodyText.match(/\{\{(\d+)\}\}/g) || []).length;
-      
+
       if (variableCount > 0) {
         const parameters = [];
-        
+
         // Map variables to lead data
         for (let i = 1; i <= variableCount; i++) {
           let value = "Customer";
-          
+
           // You can customize this mapping based on your template structure
           switch (i) {
             case 1:
@@ -219,16 +214,16 @@ function buildTemplateParameters(template: any, lead: any) {
             default:
               value = "";
           }
-          
+
           parameters.push({
             type: "text",
-            text: value
+            text: value,
           });
         }
-        
+
         components.push({
           type: "body",
-          parameters: parameters
+          parameters: parameters,
         });
       }
     }
@@ -244,9 +239,9 @@ function buildTemplateParameters(template: any, lead: any) {
             parameters: [
               {
                 type: "text",
-                text: lead.lead_id || "" // or any dynamic value
-              }
-            ]
+                text: lead.lead_id || "", // or any dynamic value
+              },
+            ],
           });
         }
       });
@@ -267,7 +262,7 @@ async function sendWhatsAppTemplate(lead: any, templateId: string) {
 
     // Clean phone number (remove spaces, dashes, etc.)
     let phoneNumber = lead.phone.replace(/[\s\-\(\)]/g, "");
-    
+
     // Add country code if not present (assuming India +91, modify as needed)
     if (!phoneNumber.startsWith("+")) {
       phoneNumber = "+91" + phoneNumber;
@@ -276,7 +271,7 @@ async function sendWhatsAppTemplate(lead: any, templateId: string) {
     // Fetch template details from WhatsApp API
     console.log(`Fetching template details for: ${templateId}`);
     const template = await getTemplateDetails(templateId);
-    
+
     if (!template) {
       return { success: false, error: `Template not found: ${templateId}` };
     }
@@ -294,9 +289,9 @@ async function sendWhatsAppTemplate(lead: any, templateId: string) {
       template: {
         name: template.name,
         language: {
-          code: template.language || "en"
-        }
-      }
+          code: template.language || "en",
+        },
+      },
     };
 
     // Add components only if there are parameters
@@ -304,7 +299,9 @@ async function sendWhatsAppTemplate(lead: any, templateId: string) {
       payload.template.components = components;
     }
 
-    console.log(`Sending WhatsApp template "${template.name}" to ${phoneNumber}`);
+    console.log(
+      `Sending WhatsApp template "${template.name}" to ${phoneNumber}`
+    );
     console.log("Payload:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
@@ -312,29 +309,35 @@ async function sendWhatsAppTemplate(lead: any, templateId: string) {
       payload,
       {
         headers: {
-          "Authorization": `Bearer ${SYSTEM_USER_TOKEN_META}`,
-          "Content-Type": "application/json"
-        }
+          Authorization: `Bearer ${SYSTEM_USER_TOKEN_META}`,
+          "Content-Type": "application/json",
+        },
       }
     );
 
-    console.log(`✅ WhatsApp message sent successfully to ${lead.full_name || phoneNumber}`);
+    console.log(
+      `✅ WhatsApp message sent successfully to ${
+        lead.full_name || phoneNumber
+      }`
+    );
     console.log(`Message ID: ${response.data.messages?.[0]?.id}`);
 
     return {
       success: true,
       message_id: response.data.messages?.[0]?.id,
       phone_number: phoneNumber,
-      template_name: template.name
+      template_name: template.name,
     };
-
   } catch (error: any) {
-    console.error(`❌ Error sending WhatsApp to ${lead.phone}:`, error.response?.data || error.message);
-    
+    console.error(
+      `❌ Error sending WhatsApp to ${lead.phone}:`,
+      error.response?.data || error.message
+    );
+
     return {
       success: false,
       error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code
+      error_code: error.response?.data?.error?.code,
     };
   }
 }
@@ -365,12 +368,18 @@ export async function syncLeadsForFormMain(formAutomation: any) {
       );
 
       // Check if lead already exists
-      const existingLead = await Leadfb.findOne({ lead_id: normalizedLead.lead_id });
+      const existingLead = await Leadfb.findOne({
+        lead_id: normalizedLead.lead_id,
+      });
 
       if (!existingLead) {
         // NEW LEAD - Save with template_sent: false
-        console.log(`🆕 New lead found: ${normalizedLead.full_name || normalizedLead.email}`);
-        
+        console.log(
+          `🆕 New lead found: ${
+            normalizedLead.full_name || normalizedLead.email
+          }`
+        );
+
         const newLead: any = await Leadfb.create({
           ...normalizedLead,
           template_sent: false,
@@ -381,14 +390,17 @@ export async function syncLeadsForFormMain(formAutomation: any) {
 
         // Send WhatsApp template if phone number exists
         if (newLead.phone && formAutomation.template_id) {
-          console.log(`📱 Sending WhatsApp template (${formAutomation.template_name}) to new lead...`);
-          
+          console.log(
+            `📱 Sending WhatsApp template (${formAutomation.template_name}) to new lead...`
+          );
+
           // Send the template that is assigned to THIS FORM
           const result = await sendTemplateMessage(
             newLead.phone,
             formAutomation.template_name // Using template_id from the form's automation
           );
-          
+
+          // const messageContent = `Template sent: ${formAutomation.template_name}`;
 
           if (result.success) {
             // Update lead with template_sent: true and message details
@@ -397,27 +409,49 @@ export async function syncLeadsForFormMain(formAutomation: any) {
               template_sent_at: new Date(),
               whatsapp_message_id: result.messageId,
               whatsapp_phone_number: result.phone_number,
-              template_used: result.template_name
+              template_used: result.template_name,
             });
             console.log(`📨 WhatsApp message sent: Message ID ${result}`);
             templatesSentCount++;
-            console.log(`✅ Template "${result.template_name}" sent successfully and lead updated: template_sent = true`);
+            try {
+              const contactId = await getOrCreateContactId(newLead);
+
+              const messageContent = `Template sent: ${formAutomation.template_name}`;
+
+              if (contactId) {
+                await storage.createMessage({
+                  contactId,
+                  content: messageContent,
+                  type: "text",
+                  direction: "outbound",
+                  status: "sent",
+                });
+              }
+            } catch (saveError) {
+              console.error(
+                "[TemplateSync] Failed to save message to conversation:",
+                saveError
+              );
+            }
+            console.log(
+              `✅ Template "${result.template_name}" sent successfully and lead updated: template_sent = true`
+            );
           } else {
             // Log the failure but keep template_sent as false
             await Leadfb.findByIdAndUpdate(newLead._id, {
               template_sent_error: result.error,
               template_sent_error_code: result.error_code,
-              last_template_attempt: new Date()
-
+              last_template_attempt: new Date(),
             });
-            
+
             templatesFailedCount++;
             console.log(`❌ Template send failed: ${result.error}`);
           }
         } else {
-          console.log(`⚠️ No phone number or template configured for form, skipping WhatsApp send`);
+          console.log(
+            `⚠️ No phone number or template configured for form, skipping WhatsApp send`
+          );
         }
-
       } else {
         // EXISTING LEAD - Just update sync time, don't resend template
         await Leadfb.findOneAndUpdate(
@@ -438,20 +472,20 @@ export async function syncLeadsForFormMain(formAutomation: any) {
       updated_leads: updatedLeadsCount,
       templates_sent: templatesSentCount,
       templates_failed: templatesFailedCount,
-      total_leads: fbLeads.length
+      total_leads: fbLeads.length,
     };
     await formAutomation.save();
 
     console.log(
       `✨ Sync complete: ${newLeadsCount} new, ${updatedLeadsCount} updated, ${templatesSentCount} templates sent, ${templatesFailedCount} failed`
     );
-    
+
     return {
       newLeadsCount,
       updatedLeadsCount,
       templatesSentCount,
       templatesFailedCount,
-      totalLeads: fbLeads.length
+      totalLeads: fbLeads.length,
     };
   } catch (error: any) {
     console.error(
@@ -475,7 +509,7 @@ export async function retryFailedTemplates() {
 
     console.log(
       `📌 Found ${failedLeads.length} failed leads`,
-      failedLeads.map(l => ({
+      failedLeads.map((l) => ({
         id: l._id,
         phone: l.phone,
         form_id: l.form_id,
@@ -509,24 +543,18 @@ export async function retryFailedTemplates() {
         continue;
       }
 
-      console.log(
-        `📤 Sending WhatsApp template`,
-        {
-          leadId: lead._id,
-          templateId: automation.template_id,
-          phone: lead.phone,
-        }
-      );
+      console.log(`📤 Sending WhatsApp template`, {
+        leadId: lead._id,
+        templateId: automation.template_id,
+        phone: lead.phone,
+      });
 
       const result = await sendTemplateMessage(
         lead.phone,
         automation.template_name
       );
 
-      console.log(
-        `📨 WhatsApp response for lead ${lead._id}:`,
-        result
-      );
+      console.log(`📨 WhatsApp response for lead ${lead._id}:`, result);
 
       if (result.success) {
         await Leadfb.findByIdAndUpdate(lead._id, {
@@ -541,13 +569,10 @@ export async function retryFailedTemplates() {
           },
         });
 
-        console.log(
-          `✅ Template sent successfully for lead ${lead._id}`,
-          {
-            message_id: result.messageId,
-            template: result.template_name,
-          }
-        );
+        console.log(`✅ Template sent successfully for lead ${lead._id}`, {
+          message_id: result.messageId,
+          template: result.template_name,
+        });
 
         retrySuccessCount++;
       } else {
@@ -557,58 +582,51 @@ export async function retryFailedTemplates() {
           last_template_attempt: new Date(),
         });
 
-        console.error(
-          `❌ Template send failed for lead ${lead._id}`,
-          {
-            error: result.error,
-            error_code: result.error_code,
-          }
-        );
+        console.error(`❌ Template send failed for lead ${lead._id}`, {
+          error: result.error,
+          error_code: result.error_code,
+        });
 
         retryFailCount++;
       }
     }
 
-    console.log(
-      `🏁 Retry complete`,
-      {
-        success: retrySuccessCount,
-        failed: retryFailCount,
-        duration_ms: Date.now() - startTime,
-      }
-    );
+    console.log(`🏁 Retry complete`, {
+      success: retrySuccessCount,
+      failed: retryFailCount,
+      duration_ms: Date.now() - startTime,
+    });
 
     return { retrySuccessCount, retryFailCount };
   } catch (error: any) {
-    console.error(
-      "🔥 Fatal error in retryFailedTemplates",
-      {
-        message: error.message,
-        stack: error.stack,
-      }
-    );
+    console.error("🔥 Fatal error in retryFailedTemplates", {
+      message: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }
 
-
-function calculateNextSendTime(step: any, currentTime: Date = new Date()): Date {
+function calculateNextSendTime(
+  step: any,
+  currentTime: Date = new Date()
+): Date {
   const nextTime = new Date(currentTime);
 
   // Add delay
-  if (step.delay_unit === 'minutes') {
+  if (step.delay_unit === "minutes") {
     nextTime.setMinutes(nextTime.getMinutes() + step.delay_value);
-  } else if (step.delay_unit === 'hours') {
+  } else if (step.delay_unit === "hours") {
     nextTime.setHours(nextTime.getHours() + step.delay_value);
-  } else if (step.delay_unit === 'days') {
+  } else if (step.delay_unit === "days") {
     nextTime.setDate(nextTime.getDate() + step.delay_value);
   }
 
   // If specific time is set, adjust to that time
   if (step.send_at_time) {
-    const [hours, minutes] = step.send_at_time.split(':').map(Number);
+    const [hours, minutes] = step.send_at_time.split(":").map(Number);
     nextTime.setHours(hours, minutes, 0, 0);
-    
+
     // If calculated time is in the past, add a day
     if (nextTime < new Date()) {
       nextTime.setDate(nextTime.getDate() + 1);
@@ -618,37 +636,36 @@ function calculateNextSendTime(step: any, currentTime: Date = new Date()): Date 
   return nextTime;
 }
 
-
-
-
 export async function processDripCampaigns() {
   try {
-    console.log('🔄 Processing drip campaign messages...');
+    console.log("🔄 Processing drip campaign messages...");
 
     const now = new Date();
 
     // Find all leads that need their next message sent
     const pendingLeads = await LeadDripStatus.find({
-      status: 'active',
-      next_send_time: { $lte: now }
-    }).populate('campaign_id');
+      status: "active",
+      next_send_time: { $lte: now },
+    }).populate("campaign_id");
 
     console.log(`Found ${pendingLeads.length} leads ready for next message`);
 
     for (const leadStatus of pendingLeads) {
       try {
         const campaign: any = leadStatus.campaign_id;
-        
+
         if (!campaign || !campaign.is_active) {
-          console.log(`Campaign inactive for lead ${leadStatus.lead_id}, skipping...`);
+          console.log(
+            `Campaign inactive for lead ${leadStatus.lead_id}, skipping...`
+          );
           continue;
         }
 
         const nextStepIndex = leadStatus.current_step + 1;
-        
+
         if (nextStepIndex >= campaign.steps.length) {
           // Campaign completed
-          leadStatus.status = 'completed';
+          leadStatus.status = "completed";
           leadStatus.completed_at = new Date();
           leadStatus.next_send_time = null;
           await leadStatus.save();
@@ -660,16 +677,22 @@ export async function processDripCampaigns() {
 
         // Get lead details
         const lead = await Leadfb.findOne({ lead_id: leadStatus.lead_id });
-        
+
         if (!lead) {
-          console.log(`Lead ${leadStatus.lead_id} not found, marking as failed`);
-          leadStatus.status = 'failed';
+          console.log(
+            `Lead ${leadStatus.lead_id} not found, marking as failed`
+          );
+          leadStatus.status = "failed";
           await leadStatus.save();
           continue;
         }
 
         // Send WhatsApp message
-        console.log(`📱 Sending step ${nextStepIndex + 1} to ${lead.full_name || lead.phone}`);
+        console.log(
+          `📱 Sending step ${nextStepIndex + 1} to ${
+            lead.full_name || lead.phone
+          }`
+        );
         const result = await sendWhatsAppTemplate(lead, nextStep.template_id);
 
         // Update lead status
@@ -679,47 +702,66 @@ export async function processDripCampaigns() {
           sent_at: new Date(),
           message_id: result.message_id,
           success: result.success,
-          error: result.error
+          error: result.error,
         });
 
         if (result.success) {
           leadStatus.current_step = nextStepIndex;
-          
+
           // Calculate next send time if there are more steps
           if (nextStepIndex + 1 < campaign.steps.length) {
-            leadStatus.next_send_time = calculateNextSendTime(campaign.steps[nextStepIndex + 1]);
-            console.log(`✅ Message sent. Next message scheduled for ${leadStatus.next_send_time}`);
+            leadStatus.next_send_time = calculateNextSendTime(
+              campaign.steps[nextStepIndex + 1]
+            );
+            console.log(
+              `✅ Message sent. Next message scheduled for ${leadStatus.next_send_time}`
+            );
           } else {
             // This was the last step
-            leadStatus.status = 'completed';
+            leadStatus.status = "completed";
             leadStatus.completed_at = new Date();
             leadStatus.next_send_time = null;
-            console.log(`✅ Final message sent. Campaign completed for ${lead.full_name}`);
+            console.log(
+              `✅ Final message sent. Campaign completed for ${lead.full_name}`
+            );
           }
         } else {
-          leadStatus.status = 'failed';
+          leadStatus.status = "failed";
           console.log(`❌ Failed to send message: ${result.error}`);
         }
 
         leadStatus.last_updated = new Date();
         await leadStatus.save();
-
       } catch (error: any) {
-        console.error(`Error processing lead ${leadStatus.lead_id}:`, error.message);
+        console.error(
+          `Error processing lead ${leadStatus.lead_id}:`,
+          error.message
+        );
       }
     }
 
-    console.log('✨ Drip campaign processing complete');
+    console.log("✨ Drip campaign processing complete");
   } catch (error: any) {
-    console.error('Error in processDripCampaigns:', error.message);
+    console.error("Error in processDripCampaigns:", error.message);
   }
 }
 
 async function getCampaignStats(campaignId: string) {
-  const total = await LeadDripStatus.countDocuments({ campaign_id: campaignId });
-  const active = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'active' });
-  const completed = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'completed' });
-  const failed = await LeadDripStatus.countDocuments({ campaign_id: campaignId, status: 'failed' });
+  const total = await LeadDripStatus.countDocuments({
+    campaign_id: campaignId,
+  });
+  const active = await LeadDripStatus.countDocuments({
+    campaign_id: campaignId,
+    status: "active",
+  });
+  const completed = await LeadDripStatus.countDocuments({
+    campaign_id: campaignId,
+    status: "completed",
+  });
+  const failed = await LeadDripStatus.countDocuments({
+    campaign_id: campaignId,
+    status: "failed",
+  });
 
   return { total, active, completed, failed };
 }
@@ -728,9 +770,7 @@ async function getCampaignStats(campaignId: string) {
 
 // Get all drip campaigns
 
-
 // Create new drip campaign
-
 
 // Update drip campaign
 
@@ -746,15 +786,16 @@ export async function retrySend(fn: () => any, retries = 3, delayMs = 1000) {
 
       if (attempt >= retries) throw err;
 
-      await new Promise((res) =>
-        setTimeout(res, delayMs * attempt)
-      );
+      await new Promise((res) => setTimeout(res, delayMs * attempt));
     }
   }
 }
 
-
-export async function sendWithLimit(items: any, limit: number, handler: (arg0: any) => Promise<any>) {
+export async function sendWithLimit(
+  items: any,
+  limit: number,
+  handler: (arg0: any) => Promise<any>
+) {
   const executing: Promise<any>[] = [];
 
   for (const item of items) {
@@ -771,7 +812,6 @@ export async function sendWithLimit(items: any, limit: number, handler: (arg0: a
 
   await Promise.all(executing);
 }
-
 
 export async function parallelLimit<T>(
   items: T[],
@@ -795,7 +835,6 @@ export async function parallelLimit<T>(
   await Promise.all(executing);
 }
 
-
 export async function retry(fn: () => Promise<any>, retries = 3) {
   let attempt = 0;
 
@@ -809,7 +848,6 @@ export async function retry(fn: () => Promise<any>, retries = 3) {
     }
   }
 }
-
 
 export function buildMetaTemplate(template: any) {
   const components: any[] = [];
@@ -925,23 +963,18 @@ export function validateMetaTemplate(template: any) {
     }
   });
 
-  if (
-    template.headerType === "image" &&
-    !template.headerImageUrl
-  ) {
+  if (template.headerType === "image" && !template.headerImageUrl) {
     errors.push("Image header requires a public HTTPS image URL");
   }
 
   return errors;
 }
 
-
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD!,
   api_key: process.env.CLOUDINARY_KEY!,
   api_secret: process.env.CLOUDINARY_SECRET!,
 });
-
 
 export async function uploadHeaderImage(base64: string): Promise<string> {
   const res = await cloudinary.uploader.upload(base64, {
@@ -950,4 +983,19 @@ export async function uploadHeaderImage(base64: string): Promise<string> {
   });
 
   return res.secure_url;
+}
+
+export async function getOrCreateContactId(lead: any) {
+  let contact = await Contact.findOne({ phone: lead.phone });
+
+  if (!contact) {
+    contact = await Contact.create({
+      id: uuidv4(),
+      phone: lead.phone,
+      name: lead.full_name || "Facebook Lead",
+      source: "facebook",
+    });
+  }
+
+  return contact._id;
 }
