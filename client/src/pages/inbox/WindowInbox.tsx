@@ -1051,7 +1051,7 @@ export default function WindowInbox() {
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {chat.lastInboundMessage || "No customer message"}
+                            {chat.lastInboundMessage || "New customer message"}
                           </p>
                           <Badge
                             variant="outline"

@@ -195,7 +195,7 @@ export class MongoStorage implements IStorage {
     );
   } catch (err) {
     console.error("[createMessage] ❌ Chat lookup failed", err);
-  }
+}
 
   if (chat) {
     const updateData: Partial<Chat> = {

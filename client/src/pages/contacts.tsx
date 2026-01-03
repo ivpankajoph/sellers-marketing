@@ -126,6 +126,11 @@ export default function Contacts() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+
+      setIsAddDialogOpen(false);
+      setIsEditDialogOpen(false);
+      setIsImportDialogOpen(false);
+      
       if (!res.ok) throw new Error("Failed to update contact");
       return res.json();
     },
