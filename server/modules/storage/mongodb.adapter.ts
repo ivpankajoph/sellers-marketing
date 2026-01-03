@@ -265,8 +265,8 @@ const ContactSchema = new Schema(
     lastInterestUpdate: { type: Date },
     lastInboundAt: { type: Date },
     assignedDripCampaignIds: { type: [String], default: [] },
-    createdAt: { type: String, required: true },
-    updatedAt: { type: String, required: true },
+    createdAt: { type: String,  },
+    updatedAt: { type: String,  },
   },
   { collection: "contacts" }
 );

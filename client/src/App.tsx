@@ -82,6 +82,7 @@ import AiUsageDashboard from "./pages/AiUsageDashboard";
 import UserManagementDashboard from "./pages/UserManagementDashboard";
 import Register from "./pages/Register";
 import FBLeadAutomationReport from "./pages/FbleadsReport";
+import WhatsAppFlowBuilder from "./pages/CreateFlow";
 function ProtectedRoute({
   component: Component,
 }: {
@@ -314,6 +315,10 @@ function Router() {
 
       <Route path="/usagedashboard">
         {() => <ProtectedRoute component={AiUsageDashboard} />}
+      </Route>
+
+        <Route path="/create-whatsappflow">
+        {() => <ProtectedRoute component={WhatsAppFlowBuilder} />}
       </Route>
 
       <Route path="/contactusagedashboard">

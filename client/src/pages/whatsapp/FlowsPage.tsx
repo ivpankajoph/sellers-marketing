@@ -102,9 +102,9 @@ interface FlowDetail {
   id: string;
   name: string;
   categories: string[];
-  preview: {
-    preview_url: string;
-    expires_at: string;
+  preview?: {
+    preview_url?: string;
+    expires_at?: string;
   };
   status: string;
   validation_errors: any[];
@@ -125,14 +125,15 @@ interface FlowDetail {
     timezone_id: string;
     message_template_namespace: string;
   };
-  application: {
+  application?: {
     category: string;
-    link: string;
+    link?: string;
     name: string;
     id: string;
   };
 }
 
+// ✅ Fixed: Removed trailing space in API_BASE
 const API_BASE = 'https://graph.facebook.com/v18.0';
 const BEARER_TOKEN = 'EAAO1YPeIbdABQH1TresAdKODLNRGydKZBByQHNNKXsZASpIV5lZAD6MLMGdgL8t3rHGhlZBr089UfdURhsQJTd9aZCsbbGeFSsZAhZAAholXOt5z88zGHxfwNfx0wIEuWSpglj95e5ZAK5u4DlytGbWT6OqNxq4bEuNxAjtAYxnoMVXhAQIWZBo1ZCk77rgvdGkgZDZD';
 const WABA_ID = '3646219455517188';
@@ -145,6 +146,7 @@ export default function WhatsAppFlowManager() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: '',
     categories: 'OTHER',
@@ -193,6 +195,31 @@ export default function WhatsAppFlowManager() {
       setError(err instanceof Error ? err.message : 'Failed to fetch flow details');
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const publishFlow = async (flowId: string) => {
+    if (publishing) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/${flowId}/publish`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${BEARER_TOKEN}`,
+        },
+      });
+      const result = await response.json();
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Refresh flow details to reflect new status
+      await fetchFlowDetail(flowId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to publish flow');
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -273,13 +300,13 @@ export default function WhatsAppFlowManager() {
                 <p className="text-gray-600">Manage and monitor your WhatsApp flows</p>
               </div>
               <div className="flex gap-3">
-                <button
+                {/* <button
                   onClick={() => setShowCreateModal(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Create Flow
-                </button>
+                </button> */}
                 <button
                   onClick={fetchFlows}
                   disabled={loading}
@@ -363,6 +390,22 @@ export default function WhatsAppFlowManager() {
                         </span>
                         <span>JSON v{selectedFlow.json_version}</span>
                         <span>API v{selectedFlow.data_api_version}</span>
+                        {selectedFlow.status !== 'PUBLISHED' && (
+                          <button
+                            onClick={() => publishFlow(selectedFlow.id)}
+                            disabled={publishing}
+                            className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1"
+                          >
+                            {publishing ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                Publishing...
+                              </>
+                            ) : (
+                              'Publish Flow'
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -460,28 +503,34 @@ export default function WhatsAppFlowManager() {
                       {/* Application */}
                       <div>
                         <h4 className="font-semibold text-gray-900 mb-3">Application</h4>
-                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="font-medium text-gray-900">
-                              {selectedFlow.application.name}
+                        {selectedFlow.application ? (
+                          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="font-medium text-gray-900">
+                                {selectedFlow.application.name}
+                              </p>
+                              <span className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">
+                                {selectedFlow.application.category}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              ID: {selectedFlow.application.id}
                             </p>
-                            <span className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">
-                              {selectedFlow.application.category}
-                            </span>
+                            {selectedFlow.application.link && (
+                              <a
+                                href={selectedFlow.application.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
+                              >
+                                View Application
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">
-                            ID: {selectedFlow.application.id}
-                          </p>
-                          <a
-                            href={selectedFlow.application.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
-                          >
-                            View Application
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        </div>
+                        ) : (
+                          <p className="text-gray-500 italic">No associated application</p>
+                        )}
                       </div>
                     </div>
                   </div>

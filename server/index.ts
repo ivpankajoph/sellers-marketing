@@ -10,11 +10,7 @@ import {
 } from "./modules/storage/mongodb.adapter";
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
-import {
-  parallelLimit,
-  retry,
-  syncLeadsForFormMain,
-} from "./worker";
+import { parallelLimit, retry, syncLeadsForFormMain } from "./worker";
 import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
 
 const app = express();
