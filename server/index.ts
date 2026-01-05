@@ -108,11 +108,11 @@ app.use(express.urlencoded({ extended: false }));
           {
             status: "running",
             isProcessing: false,
-            nextRunAt: { $lte: now },
+            // nextRunAt: { $lte: now },
           },
           { _id: 1 }
         );
-
+        
         if (!campaignIds.length) {
           console.log("[CRON] ℹ️ No campaigns to process");
           return;
