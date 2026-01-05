@@ -50,68 +50,45 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import Swal from "sweetalert2"; // ✅ Added SweetAlert2
+import {
+  Agent,
+  BroadcastList,
+  BroadcastResponse,
+  Contact,
+  ImportedContact,
+  SavedContact,
+  Template,
+} from "./type";
 
-interface Contact {
-  id: string;
-  name: string;
-  phone: string;
-  tags: string[];
-}
-
-interface Template {
-  id: string;
-  name: string;
-  content: string;
-  status: string;
-}
-
-interface Agent {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-}
-
-interface BroadcastList {
-  id: string;
-  name: string;
-  contacts: Array<{ name: string; phone: string; email?: string }>;
-  createdAt: string;
-}
-
-interface ImportedContact {
-  name: string;
-  phone: string;
-  email?: string;
-}
-
-interface SavedContact {
-  id: string;
-  name: string;
-  phone: string;
-  email?: string;
-  tags?: string[];
-  source?: string;
-}
-
-// Define response shape for type safety
-interface BroadcastResponse {
-  successful: number;
-  failed: number;
-  error?: string;
-  failedContacts?: Array<{ name: string; phone: string }>;
-}
+const REQUIRED_EXCEL_COLUMNS = [
+  "Created",
+  "Name",
+  "Email address",
+  "Source",
+  "Form",
+  "Channel",
+  "Stage",
+  "Owner",
+  "Labels",
+  "Phone",
+  "Secondary phone number",
+  "WhatsApp number",
+];
 
 export default function Broadcast() {
   const [, setLocation] = useLocation();
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
-  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>([]);
+  const [importedContacts, setImportedContacts] = useState<ImportedContact[]>(
+    []
+  );
   const [message, setMessage] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedTemplateName, setSelectedTemplateName] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [messageType, setMessageType] = useState<"template" | "custom" | "ai_agent">("template");
+  const [messageType, setMessageType] = useState<
+    "template" | "custom" | "ai_agent"
+  >("template");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isScheduled, setIsScheduled] = useState(false);
   const [selectedListId, setSelectedListId] = useState("");
@@ -119,6 +96,8 @@ export default function Broadcast() {
   const [showCreateList, setShowCreateList] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showExcelFormatDialog, setShowExcelFormatDialog] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -443,7 +422,9 @@ export default function Broadcast() {
         Swal.fire({
           icon: "success",
           title: "Broadcast Scheduled!",
-          text: `Your message will be sent on ${new Date(scheduledTime).toLocaleString()}`,
+          text: `Your message will be sent on ${new Date(
+            scheduledTime
+          ).toLocaleString()}`,
           confirmButtonText: "OK",
         });
       } else if (result.failed > 0) {
@@ -536,7 +517,8 @@ export default function Broadcast() {
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <strong>Campaign name is required</strong> to track and analyze your broadcasts.
+            <strong>Campaign name is required</strong> to track and analyze your
+            broadcasts.
           </AlertDescription>
         </Alert>
 
@@ -548,7 +530,11 @@ export default function Broadcast() {
             placeholder="e.g., Black Friday Sale, Product Launch 2024"
             value={campaignName}
             onChange={(e) => setCampaignName(e.target.value)}
-            className={!campaignName.trim() ? "border-red-300 focus-visible:ring-red-500" : ""}
+            className={
+              !campaignName.trim()
+                ? "border-red-300 focus-visible:ring-red-500"
+                : ""
+            }
           />
           {!campaignName.trim() && (
             <p className="text-sm text-red-500">
@@ -565,7 +551,8 @@ export default function Broadcast() {
                 1. Select Audience
               </CardTitle>
               <CardDescription>
-                Choose who will receive this message. Selected: {totalSelected} contacts
+                Choose who will receive this message. Selected: {totalSelected}{" "}
+                contacts
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -581,16 +568,65 @@ export default function Broadcast() {
                   variant="outline"
                   size="sm"
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importExcelMutation.isPending}
+                  onClick={() => setShowExcelFormatDialog(true)}
                 >
-                  {importExcelMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  )}
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
                   Import Excel/CSV
                 </Button>
+                <Dialog
+                  open={showExcelFormatDialog}
+                  onOpenChange={setShowExcelFormatDialog}
+                >
+                  <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Excel File Format Required</DialogTitle>
+                      <DialogDescription>
+                        Please ensure your Excel or CSV file contains the
+                        following columns
+                        <strong> exactly as shown</strong>.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="mt-4 border rounded-md p-3 bg-muted/50">
+                      <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
+                        {REQUIRED_EXCEL_COLUMNS.map((col) => (
+                          <li key={col} className="font-mono">
+                            • {col}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <Alert className="mt-4">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Incorrect or missing columns may cause some rows to be
+                        skipped during import.
+                      </AlertDescription>
+                    </Alert>
+
+                    <DialogFooter className="mt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowExcelFormatDialog(false)}
+                      >
+                        Cancel
+                      </Button>
+
+                      <Button
+                        onClick={() => {
+                          setShowExcelFormatDialog(false);
+                          setTimeout(() => {
+                            fileInputRef.current?.click();
+                          }, 100);
+                        }}
+                      >
+                        Proceed to Upload
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
                 <Dialog open={showCreateList} onOpenChange={setShowCreateList}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" type="button">
@@ -823,7 +859,8 @@ export default function Broadcast() {
                       onChange={(e) => setMessage(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Note: Custom messages require the recipient to have messaged you first (24-hour window rule).
+                      Note: Custom messages require the recipient to have
+                      messaged you first (24-hour window rule).
                     </p>
                   </div>
                   {message && (
@@ -863,7 +900,8 @@ export default function Broadcast() {
                     </Select>
                     {selectedAgentId && (
                       <p className="text-sm text-muted-foreground">
-                        The AI agent will generate personalized messages for each recipient using the hello_world template.
+                        The AI agent will generate personalized messages for
+                        each recipient using the hello_world template.
                       </p>
                     )}
                   </div>
@@ -874,7 +912,9 @@ export default function Broadcast() {
                 <Checkbox
                   id="schedule"
                   checked={isScheduled}
-                  onCheckedChange={(checked) => setIsScheduled(checked === true)}
+                  onCheckedChange={(checked) =>
+                    setIsScheduled(checked === true)
+                  }
                 />
                 <Label htmlFor="schedule" className="cursor-pointer">
                   Schedule for later
