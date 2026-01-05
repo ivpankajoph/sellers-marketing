@@ -1,22 +1,41 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  Zap, FileText, Search, Filter, CheckCircle, Clock, AlertCircle, 
-  Play, Pause, Plus, Trash2, Edit2, Calendar, Users, Send, 
-  ChevronDown, ChevronUp, Copy, BarChart3, Settings
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Swal from "sweetalert2";
+import {
+  Zap,
+  FileText,
+  Search,
+  Filter,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  Play,
+  Pause,
+  Plus,
+  Trash2,
+  Edit2,
+  Calendar,
+  Users,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  BarChart3,
+  Settings,
+} from "lucide-react";
 
 // --- API Helpers ---
-const fetchForms = async () => (await fetch('/api/forms')).json();
-const fetchTemplates = async () => (await fetch('/api/templates')).json();
-const fetchDripCampaigns = async () => (await fetch('/api/drip-campaigns')).json();
+const fetchForms = async () => (await fetch("/api/forms")).json();
+const fetchTemplates = async () => (await fetch("/api/templates")).json();
+const fetchDripCampaigns = async () =>
+  (await fetch("/api/drip-campaigns")).json();
 
 interface DripStep {
   id: string;
   template_id: string;
   template_name: string;
   delay_value: number;
-  delay_unit: 'minutes' | 'hours' | 'days';
+  delay_unit: "minutes" | "hours" | "days";
   send_at_time?: string; // HH:MM format
   order: number;
 }
@@ -37,59 +56,117 @@ interface DripCampaign {
 
 export default function DripCampaignManager() {
   const queryClient = useQueryClient();
-  
+
   // State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
-  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(
+    new Set()
+  );
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState<DripCampaign | null>(null);
+  const [editingCampaign, setEditingCampaign] = useState<DripCampaign | null>(
+    null
+  );
 
   // Fetch Data
-  const { data: forms = [] } = useQuery({ queryKey: ['forms'], queryFn: fetchForms });
-  const { data: templates = [] } = useQuery({ queryKey: ['templates'], queryFn: fetchTemplates });
-  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: fetchDripCampaigns });
+  const { data: forms = [] } = useQuery({
+    queryKey: ["forms"],
+    queryFn: fetchForms,
+  });
+  const { data: templates = [] } = useQuery({
+    queryKey: ["templates"],
+    queryFn: fetchTemplates,
+  });
+  const { data: campaigns = [] } = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: fetchDripCampaigns,
+  });
 
   // Mutations
   const createCampaignMutation = useMutation({
     mutationFn: async (payload: any) => {
-      return fetch('/api/drip-campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/drip-campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) throw new Error("Failed to create campaign");
+      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       setShowCreateModal(false);
-      alert('Campaign created successfully!');
-    }
+      Swal.fire({
+        icon: "success",
+        title: "Campaign Created!",
+        text: "Your drip campaign has been created successfully.",
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    },
+    onError: (error: any) => {
+      Swal.fire({
+        icon: "error",
+        title: "Creation Failed",
+        text: error.message || "An error occurred while creating the campaign.",
+      });
+    },
   });
 
   const toggleCampaignMutation = useMutation({
-    mutationFn: async ({ campaignId, isActive }: { campaignId: string; isActive: boolean }) => {
-      return fetch(`/api/drip-campaigns/${campaignId}/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+    mutationFn: async ({
+      campaignId,
+      isActive,
+    }: {
+      campaignId: string;
+      isActive: boolean;
+    }) => {
+      const res = await fetch(`/api/drip-campaigns/${campaignId}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_active: isActive }),
       });
+      if (!res.ok) throw new Error("Failed to update campaign status");
+      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-    }
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (error: any) => {
+      Swal.fire({
+        icon: "error",
+        title: "Update Failed",
+        text: error.message || "Could not toggle campaign status.",
+      });
+    },
   });
 
   const deleteCampaignMutation = useMutation({
     mutationFn: async (campaignId: string) => {
-      return fetch(`/api/drip-campaigns/${campaignId}`, {
-        method: 'DELETE',
+      const res = await fetch(`/api/drip-campaigns/${campaignId}`, {
+        method: "DELETE",
       });
+      if (!res.ok) throw new Error("Failed to delete campaign");
+      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-      alert('Campaign deleted successfully!');
-    }
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      Swal.fire({
+        icon: "success",
+        title: "Deleted!",
+        text: "Campaign has been deleted.",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    },
+    onError: (error: any) => {
+      Swal.fire({
+        icon: "error",
+        title: "Deletion Failed",
+        text: error.message || "Could not delete the campaign.",
+      });
+    },
   });
 
   // Toggle campaign expansion
@@ -107,13 +184,15 @@ export default function DripCampaignManager() {
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((campaign: DripCampaign) => {
       const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = !searchQuery || 
+      const matchesSearch =
+        !searchQuery ||
         campaign.campaign_name?.toLowerCase().includes(searchLower) ||
         campaign.form_name?.toLowerCase().includes(searchLower);
 
-      const matchesStatus = filterStatus === 'all' || 
-        (filterStatus === 'active' && campaign.is_active) ||
-        (filterStatus === 'inactive' && !campaign.is_active);
+      const matchesStatus =
+        filterStatus === "all" ||
+        (filterStatus === "active" && campaign.is_active) ||
+        (filterStatus === "inactive" && !campaign.is_active);
 
       return matchesSearch && matchesStatus;
     });
@@ -121,9 +200,17 @@ export default function DripCampaignManager() {
 
   // Stats
   const totalCampaigns = campaigns.length;
-  const activeCampaigns = campaigns.filter((c: DripCampaign) => c.is_active).length;
-  const totalSteps = campaigns.reduce((sum: number, c: DripCampaign) => sum + (c.steps?.length || 0), 0);
-  const totalLeads = campaigns.reduce((sum: number, c: DripCampaign) => sum + (c.active_leads || 0), 0);
+  const activeCampaigns = campaigns.filter(
+    (c: DripCampaign) => c.is_active
+  ).length;
+  const totalSteps = campaigns.reduce(
+    (sum: number, c: DripCampaign) => sum + (c.steps?.length || 0),
+    0
+  );
+  const totalLeads = campaigns.reduce(
+    (sum: number, c: DripCampaign) => sum + (c.active_leads || 0),
+    0
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
@@ -136,7 +223,9 @@ export default function DripCampaignManager() {
                 <Zap className="text-blue-600" size={40} />
                 Drip Campaign Manager
               </h1>
-              <p className="text-gray-600">Create automated message sequences for your leads</p>
+              <p className="text-gray-600">
+                Create automated message sequences for your leads
+              </p>
             </div>
 
             <button
@@ -155,7 +244,9 @@ export default function DripCampaignManager() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm">Total Campaigns</p>
-                <p className="text-2xl font-bold text-gray-900">{totalCampaigns}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {totalCampaigns}
+                </p>
               </div>
               <BarChart3 className="text-blue-500" size={28} />
             </div>
@@ -165,7 +256,9 @@ export default function DripCampaignManager() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm">Active</p>
-                <p className="text-2xl font-bold text-gray-900">{activeCampaigns}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {activeCampaigns}
+                </p>
               </div>
               <Play className="text-green-500" size={28} />
             </div>
@@ -197,7 +290,10 @@ export default function DripCampaignManager() {
           <div className="bg-white rounded-xl shadow-lg p-4 mb-6 border border-gray-100">
             <div className="grid md:grid-cols-2 gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <Search
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  size={20}
+                />
                 <input
                   type="text"
                   placeholder="Search campaigns..."
@@ -238,7 +334,9 @@ export default function DripCampaignManager() {
             <div className="text-center py-16">
               <Zap className="mx-auto text-gray-300 mb-4" size={64} />
               <p className="text-gray-600 text-lg mb-4">
-                {campaigns.length === 0 ? 'No campaigns created yet' : 'No campaigns match your filters'}
+                {campaigns.length === 0
+                  ? "No campaigns created yet"
+                  : "No campaigns match your filters"}
               </p>
               {campaigns.length === 0 && (
                 <button
@@ -257,10 +355,24 @@ export default function DripCampaignManager() {
                   campaign={campaign}
                   isExpanded={expandedCampaigns.has(campaign.id)}
                   onToggleExpand={() => toggleExpand(campaign.id)}
-                  onToggleActive={(isActive: any) => toggleCampaignMutation.mutate({ campaignId: campaign.id, isActive })}
+                  onToggleActive={(isActive: any) =>
+                    toggleCampaignMutation.mutate({
+                      campaignId: campaign.id,
+                      isActive,
+                    })
+                  }
                   onEdit={() => setEditingCampaign(campaign)}
-                  onDelete={() => {
-                    if (confirm('Are you sure you want to delete this campaign?')) {
+                  onDelete={async () => {
+                    const result = await Swal.fire({
+                      title: "Are you sure?",
+                      text: "You won't be able to revert this!",
+                      icon: "warning",
+                      showCancelButton: true,
+                      confirmButtonColor: "#d33",
+                      cancelButtonColor: "#3085d6",
+                      confirmButtonText: "Yes, delete it!",
+                    });
+                    if (result.isConfirmed) {
                       deleteCampaignMutation.mutate(campaign.id);
                     }
                   }}
@@ -289,7 +401,14 @@ export default function DripCampaignManager() {
 }
 
 // Campaign Card Component
-function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, onEdit, onDelete }: any) {
+function CampaignCard({
+  campaign,
+  isExpanded,
+  onToggleExpand,
+  onToggleActive,
+  onEdit,
+  onDelete,
+}: any) {
   return (
     <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow duration-200">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -353,8 +472,8 @@ function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, on
             onClick={() => onToggleActive(!campaign.is_active)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
               campaign.is_active
-                ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'bg-green-500 hover:bg-green-600 text-white'
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-green-500 hover:bg-green-600 text-white"
             }`}
           >
             {campaign.is_active ? (
@@ -370,11 +489,13 @@ function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, on
             )}
           </button>
 
-          <span className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium ${
-            campaign.is_active
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}>
+          <span
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium ${
+              campaign.is_active
+                ? "bg-green-100 text-green-700"
+                : "bg-gray-100 text-gray-600"
+            }`}
+          >
             {campaign.is_active ? (
               <>
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -399,14 +520,21 @@ function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, on
           </h4>
           <div className="space-y-3">
             {campaign.steps?.map((step: DripStep, index: number) => (
-              <div key={step.id} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-gray-200">
+              <div
+                key={step.id}
+                className="flex items-center gap-3 bg-white p-3 rounded-lg border border-gray-200"
+              >
                 <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold">
                   {index + 1}
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900">{step.template_name}</p>
+                  <p className="font-medium text-gray-900">
+                    {step.template_name}
+                  </p>
                   <p className="text-sm text-gray-500">
-                    {index === 0 ? 'Immediately' : `After ${step.delay_value} ${step.delay_unit}`}
+                    {index === 0
+                      ? "Immediately"
+                      : `After ${step.delay_value} ${step.delay_unit}`}
                     {step.send_at_time && ` at ${step.send_at_time}`}
                   </p>
                 </div>
@@ -419,15 +547,21 @@ function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, on
           <div className="mt-4 grid grid-cols-3 gap-4">
             <div className="bg-blue-50 p-3 rounded-lg">
               <p className="text-xs text-gray-600 mb-1">Total Leads</p>
-              <p className="text-xl font-bold text-blue-600">{campaign.total_leads || 0}</p>
+              <p className="text-xl font-bold text-blue-600">
+                {campaign.total_leads || 0}
+              </p>
             </div>
             <div className="bg-green-50 p-3 rounded-lg">
               <p className="text-xs text-gray-600 mb-1">In Progress</p>
-              <p className="text-xl font-bold text-green-600">{campaign.active_leads || 0}</p>
+              <p className="text-xl font-bold text-green-600">
+                {campaign.active_leads || 0}
+              </p>
             </div>
             <div className="bg-purple-50 p-3 rounded-lg">
               <p className="text-xs text-gray-600 mb-1">Completed</p>
-              <p className="text-xl font-bold text-purple-600">{campaign.completed_leads || 0}</p>
+              <p className="text-xl font-bold text-purple-600">
+                {campaign.completed_leads || 0}
+              </p>
             </div>
           </div>
         </div>
@@ -439,9 +573,9 @@ function CampaignCard({ campaign, isExpanded, onToggleExpand, onToggleActive, on
 // Campaign Modal Component
 function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
   const [formData, setFormData] = useState({
-    campaign_name: campaign?.campaign_name || '',
-    form_id: campaign?.form_id || '',
-    steps: campaign?.steps || []
+    campaign_name: campaign?.campaign_name || "",
+    form_id: campaign?.form_id || "",
+    steps: campaign?.steps || [],
   });
 
   const addStep = () => {
@@ -451,33 +585,54 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
         ...formData.steps,
         {
           id: Date.now().toString(),
-          template_id: '',
-          template_name: '',
+          template_id: "",
+          template_name: "",
           delay_value: 1,
-          delay_unit: 'days',
-          order: formData.steps.length
-        }
-      ]
+          delay_unit: "days",
+          order: formData.steps.length,
+        },
+      ],
     });
   };
 
   const removeStep = (index: number) => {
     setFormData({
       ...formData,
-      steps: formData.steps.filter((_: any, i: number) => i !== index)
+      steps: formData.steps.filter((_: any, i: number) => i !== index),
     });
   };
 
   const updateStep = (index: number, field: string, value: any) => {
     const newSteps = [...formData.steps];
     newSteps[index] = { ...newSteps[index], [field]: value };
-    
-    if (field === 'template_id') {
+
+    if (field === "template_id") {
       const template = templates.find((t: any) => t.id === value);
-      newSteps[index].template_name = template?.name || '';
+      newSteps[index].template_name = template?.name || "";
     }
-    
+
     setFormData({ ...formData, steps: newSteps });
+  };
+
+  const handleSave = () => {
+    const isValid =
+      formData.campaign_name.trim() !== "" &&
+      formData.form_id !== "" &&
+      formData.steps.length > 0 &&
+      formData.steps.every(
+        (s: { template_id: string }) => s.template_id !== ""
+      );
+
+    if (!isValid) {
+      Swal.fire({
+        icon: "warning",
+        title: "Validation Error",
+        text: "Please fill in all required fields: campaign name, form, and at least one valid step with a template.",
+      });
+      return;
+    }
+
+    onSave(formData);
   };
 
   return (
@@ -485,7 +640,7 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
       <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-2xl font-bold text-gray-900">
-            {campaign ? 'Edit Campaign' : 'Create New Campaign'}
+            {campaign ? "Edit Campaign" : "Create New Campaign"}
           </h2>
         </div>
 
@@ -493,12 +648,14 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
           {/* Campaign Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Campaign Name
+              Campaign Name *
             </label>
             <input
               type="text"
               value={formData.campaign_name}
-              onChange={(e) => setFormData({ ...formData, campaign_name: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, campaign_name: e.target.value })
+              }
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               placeholder="e.g., Welcome Series"
             />
@@ -507,16 +664,20 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
           {/* Form Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Form
+              Select Form *
             </label>
             <select
               value={formData.form_id}
-              onChange={(e) => setFormData({ ...formData, form_id: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, form_id: e.target.value })
+              }
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
             >
               <option value="">Select a form...</option>
               {forms.map((form: any) => (
-                <option key={form.id} value={form.id}>{form.name}</option>
+                <option key={form.id} value={form.id}>
+                  {form.name}
+                </option>
               ))}
             </select>
           </div>
@@ -525,7 +686,7 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className="block text-sm font-medium text-gray-700">
-                Campaign Steps
+                Campaign Steps *
               </label>
               <button
                 onClick={addStep}
@@ -538,9 +699,14 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
 
             <div className="space-y-4">
               {formData.steps.map((step: any, index: number) => (
-                <div key={step.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div
+                  key={step.id}
+                  className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                >
                   <div className="flex items-center justify-between mb-3">
-                    <span className="font-medium text-gray-900">Step {index + 1}</span>
+                    <span className="font-medium text-gray-900">
+                      Step {index + 1}
+                    </span>
                     <button
                       onClick={() => removeStep(index)}
                       className="text-red-600 hover:text-red-700"
@@ -552,16 +718,20 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">
-                        Template
+                        Template *
                       </label>
                       <select
                         value={step.template_id}
-                        onChange={(e) => updateStep(index, 'template_id', e.target.value)}
+                        onChange={(e) =>
+                          updateStep(index, "template_id", e.target.value)
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                       >
                         <option value="">Select template...</option>
                         {templates.map((t: any) => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -576,7 +746,13 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
                             type="number"
                             min="0"
                             value={step.delay_value}
-                            onChange={(e) => updateStep(index, 'delay_value', parseInt(e.target.value))}
+                            onChange={(e) =>
+                              updateStep(
+                                index,
+                                "delay_value",
+                                parseInt(e.target.value) || 0
+                              )
+                            }
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                           />
                         </div>
@@ -586,7 +762,9 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
                           </label>
                           <select
                             value={step.delay_unit}
-                            onChange={(e) => updateStep(index, 'delay_unit', e.target.value)}
+                            onChange={(e) =>
+                              updateStep(index, "delay_unit", e.target.value)
+                            }
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                           >
                             <option value="minutes">Minutes</option>
@@ -604,8 +782,10 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
                         </label>
                         <input
                           type="time"
-                          value={step.send_at_time || ''}
-                          onChange={(e) => updateStep(index, 'send_at_time', e.target.value)}
+                          value={step.send_at_time || ""}
+                          onChange={(e) =>
+                            updateStep(index, "send_at_time", e.target.value)
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </div>
@@ -626,7 +806,7 @@ function CampaignModal({ campaign, forms, templates, onClose, onSave }: any) {
             Cancel
           </button>
           <button
-            onClick={() => onSave(formData)}
+            onClick={handleSave}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
             Save Campaign
