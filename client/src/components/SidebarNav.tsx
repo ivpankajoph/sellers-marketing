@@ -283,7 +283,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         { label: "Flows", href: "/whatsapp/flows" },
           { label: "Create Flows", href: "/create-whatsappflow" },
         { label: "Drip Campaigns", href: "/automation/campaigns" },
-        { label: "Analytics", href: "/automation/analytics" },
+        // { label: "Analytics", href: "/automation/analytics" },
         { label: "Interest Lists", href: "/automation/interest" },
         // { label: "Follow-up", href: "/automation/follow-up" },
       ],
