@@ -43,7 +43,7 @@ import {
   uploadHeaderImage,
   validateMetaTemplate,
 } from "./worker.ts";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import multer from "multer";
 import cloudinary from "./cloudinary.ts";
 
@@ -295,6 +295,98 @@ export async function registerRoutes(
 
     res.json(campaign);
   });
+  // GET /api/reports/drip-campaigns
+app.get("/api/reports/drip-campaigns", async (req, res) => {
+  const {
+    search = "",
+    status,
+    fromDate,
+    toDate,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    page = 1,
+    limit = 10,
+  } = req.query;
+
+  const filter: any = {};
+
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { id: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (status) filter.status = status;
+
+  if (fromDate || toDate) {
+    filter.createdAt = {};
+    if (fromDate) filter.createdAt.$gte = new Date(fromDate as string);
+    if (toDate) filter.createdAt.$lte = new Date(toDate as string);
+  }
+
+  const campaigns = await mongodb.Campaign.find(filter)
+    .sort({ [sortBy as string]: sortOrder === "asc" ? 1 : -1 })
+    .skip((+page - 1) * +limit)
+    .limit(+limit);
+
+  const total = await mongodb.Campaign.countDocuments(filter);
+
+  res.json({
+    data: campaigns,
+    meta: {
+      total,
+      page: +page,
+      limit: +limit,
+    },
+  });
+});
+  // GET /api/reports/drip-campaigns/:campaignId/summary
+app.get("/api/reports/drip-campaigns/:id/summary", async (req, res) => {
+  const campaignId = req.params.id;
+
+  const steps = await mongodb.CampaignLog.aggregate([
+    { $match: { campaignId } },
+    {
+      $group: {
+        _id: "$stepIndex",
+        sent: {
+          $sum: { $cond: [{ $eq: ["$status", "sent"] }, 1, 0] },
+        },
+        failed: {
+          $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
+        },
+        pending: {
+          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+        },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  res.json({ steps });
+});
+
+// GET /api/reports/drip-campaigns/:campaignId/logs
+app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
+  const { stepIndex, status, contact, page = 1, limit = 20 } = req.query;
+
+  const filter: any = { campaignId: req.params.id };
+
+  if (stepIndex !== undefined) filter.stepIndex = +stepIndex;
+  if (status) filter.status = status;
+  if (contact) filter.contact = { $regex: contact, $options: "i" };
+
+  const logs = await mongodb.CampaignLog.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((+page - 1) * +limit)
+    .limit(+limit);
+
+  const total = await mongodb.CampaignLog.countDocuments(filter);
+
+  res.json({ data: logs, total });
+});
+
 
   app.get("/api/drip-campaigns", async (_req, res) => {
     const campaigns = await mongodb.Campaign.find().sort({ createdAt: -1 });
@@ -342,8 +434,24 @@ export async function registerRoutes(
   });
 
   app.delete("/api/drip-campaigns/:id", async (req, res) => {
-    await mongodb.Campaign.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
+    const { id } = req.params;
+
+    try {
+      const query = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { id };
+
+      const deleted = await mongodb.Campaign.findOneAndDelete(query);
+
+      if (!deleted) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Campaign not found" });
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false });
+    }
   });
 
   app.get("/api/forms", async (req, res) => {

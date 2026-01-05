@@ -281,7 +281,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
       subItems: [
         { label: "Facebook Lead Automation", href: "/automation/triggers" },
         { label: "Flows", href: "/whatsapp/flows" },
-          { label: "Create Flows", href: "/create-whatsappflow" },
+        { label: "Create Flows", href: "/create-whatsappflow" },
         { label: "Drip Campaigns", href: "/automation/campaigns" },
         // { label: "Analytics", href: "/automation/analytics" },
         { label: "Interest Lists", href: "/automation/interest" },
@@ -350,6 +350,7 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
         { label: "Lead Assignments", href: "/reports/lead-assignments" },
         { label: "Team Member Report", href: "/reports/user-activity" },
         { label: "Blocked Contacts", href: "/reports/blocked" },
+        { label: "Drip Campaigns Report", href: "/report-dripcampaign" },
         {
           label: "Fb Lead Automation Report",
           href: "/fblead-automation-report",

@@ -7,6 +7,7 @@ import {
   CampaignLog,
   connectToMongoDB,
   FormAutomation,
+  Template,
 } from "./modules/storage/mongodb.adapter";
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
@@ -80,145 +81,151 @@ app.use(express.urlencoded({ extended: false }));
 
   const STUCK_TIMEOUT_MIN = 10;
 
-  // cron.schedule(
-  //    "*/12 * * * * *",
-  //   async () => {
-  //     const now = new Date();
+  cron.schedule(
+     "*/12 * * * * *",
+    async () => {
+      const now = new Date();
 
-  //     try {
-  //       console.log(
-  //         "\n[CRON] 🕒 Drip job @",
-  //         now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
-  //       );
+      try {
+        console.log(
+          "\n[CRON] 🕒 Drip job @",
+          now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+        );
 
-  //       /* ---------- RELEASE STUCK LOCKS ---------- */
-  //       await Campaign.updateMany(
-  //         {
-  //           isProcessing: true,
-  //           processingStartedAt: {
-  //             $lte: new Date(Date.now() - STUCK_TIMEOUT_MIN * 60 * 1000),
-  //           },
-  //         },
-  //         { $set: { isProcessing: false } }
-  //       );
+        /* ---------- RELEASE STUCK LOCKS ---------- */
+        await Campaign.updateMany(
+          {
+            isProcessing: true,
+            processingStartedAt: {
+              $lte: new Date(Date.now() - STUCK_TIMEOUT_MIN * 60 * 1000),
+            },
+          },
+          { $set: { isProcessing: false } }
+        );
 
-  //       /* ---------- FETCH ELIGIBLE IDS ---------- */
-  //       const campaignIds = await Campaign.find(
-  //         {
-  //           status: "running",
-  //           isProcessing: false,
-  //           // nextRunAt: { $lte: now },
-  //         },
-  //         { _id: 1 }
-  //       );
+        /* ---------- FETCH ELIGIBLE IDS ---------- */
+        const campaignIds = await Campaign.find(
+          {
+            status: "running",
+            isProcessing: false,
+            nextRunAt: { $lte: now },
+          },
+          { _id: 1 }
+        );
 
-  //       if (!campaignIds.length) {
-  //         console.log("[CRON] ℹ️ No campaigns to process");
-  //         return;
-  //       }
+        if (!campaignIds.length) {
+          console.log("[CRON] ℹ️ No campaigns to process");
+          return;
+        }
 
-  //       console.log(`[CRON] 📦 Found ${campaignIds.length} campaigns`);
+        console.log(`[CRON] 📦 Found ${campaignIds.length} campaigns`);
 
-  //       /* ---------- PROCESS EACH CAMPAIGN ---------- */
-  //       for (const { _id } of campaignIds) {
-  //         const campaign = await Campaign.findOneAndUpdate(
-  //           { _id, isProcessing: false },
-  //           {
-  //             $set: {
-  //               isProcessing: true,
-  //               processingStartedAt: new Date(),
-  //             },
-  //           },
-  //           { new: true }
-  //         );
+        /* ---------- PROCESS EACH CAMPAIGN ---------- */
+        for (const { _id } of campaignIds) {
+          const campaign = await Campaign.findOneAndUpdate(
+            { _id, isProcessing: false },
+            {
+              $set: {
+                isProcessing: true,
+                processingStartedAt: new Date(),
+              },
+            },
+            { new: true }
+          );
 
-  //         if (!campaign) continue; // locked by another instance
+          if (!campaign) continue; // locked by another instance
 
-  //         const campaignStart = Date.now();
+          const campaignStart = Date.now();
 
-  //         try {
-  //           console.log(`[CAMPAIGN] ▶ ${campaign._id}`);
+          try {
+            console.log(`[CAMPAIGN] ▶ ${campaign._id}`);
 
-  //           const step = campaign.steps[campaign.currentStep];
+            const step = campaign.steps[campaign.currentStep];
 
-  //           if (!step) {
-  //             campaign.status = "completed";
-  //             await campaign.save();
-  //             continue;
-  //           }
+            if (!step) {
+              campaign.status = "completed";
+              await campaign.save();
+              continue;
+            }
 
-  //           /* ---------- SEND MESSAGES ---------- */
-  //           await parallelLimit(campaign.contacts, 5, async (contact: any) => {
-  //             try {
-  //               const exists = await CampaignLog.findOne({
-  //                 campaignId: campaign._id,
-  //                 stepIndex: campaign.currentStep,
-  //                 contact,
-  //               });
+            /* ---------- SEND MESSAGES ---------- */
+            await parallelLimit(campaign.contacts, 5, async (contact: any) => {
+              try {
+                const exists = await CampaignLog.findOne({
+                  campaignId: campaign._id,
+                  stepIndex: campaign.currentStep,
+                  contact,
+                });
 
-  //               if (exists) return;
+                if (exists) return;
+                console.log("contact is",contact,step.template_name)
 
-  //               await retry(() =>
-  //                 sendTemplateMessage(step.template_name!, contact)
-  //               );
+                const templatedetail = await Template.findOne({id:step.templateId})
+                if(!templatedetail){
+                  throw new Error("Template not found");
+                }
+                const template_name = templatedetail.name;
+                await retry(() =>
+                  sendTemplateMessage(contact,template_name )
+                );
 
-  //               await CampaignLog.create({
-  //                 campaignId: campaign._id,
-  //                 stepIndex: campaign.currentStep,
-  //                 contact,
-  //                 sentAt: new Date(),
-  //               });
+                await CampaignLog.create({
+                  campaignId: campaign._id,
+                  stepIndex: campaign.currentStep,
+                  contact,
+                  sentAt: new Date(),
+                });
 
-  //               console.log(`[SEND] ✅ ${contact}`);
-  //             } catch (err) {
-  //               console.error(`[SEND ERROR] ❌`, contact, err);
-  //             }
-  //           });
+                console.log(`[SEND] ✅ ${contact}`);
+              } catch (err) {
+                console.error(`[SEND ERROR] ❌`, contact, err);
+              }
+            });
 
-  //           /* ---------- NEXT STEP ---------- */
-  //           campaign.currentStep++;
+            /* ---------- NEXT STEP ---------- */
+            campaign.currentStep++;
 
-  //           const nextStep = campaign.steps[campaign.currentStep];
+            const nextStep = campaign.steps[campaign.currentStep];
 
-  //           if (!nextStep) {
-  //             campaign.status = "completed";
-  //           } else if (nextStep.scheduleType === "specific") {
-  //             campaign.nextRunAt = new Date(
-  //               `${nextStep.specificDate}T${nextStep.specificTime}:00+05:30`
-  //             );
-  //           } else {
-  //             const delayMs =
-  //               (nextStep.delayDays * 24 + nextStep.delayHours) *
-  //               60 *
-  //               60 *
-  //               1000;
+            if (!nextStep) {
+              campaign.status = "completed";
+            } else if (nextStep.scheduleType === "specific") {
+              campaign.nextRunAt = new Date(
+                `${nextStep.specificDate}T${nextStep.specificTime}:00+05:30`
+              );
+            } else {
+              const delayMs =
+                (nextStep.delayDays * 24 + nextStep.delayHours) *
+                60 *
+                60 *
+                1000;
 
-  //             campaign.nextRunAt = new Date(
-  //               campaign.nextRunAt.getTime() + delayMs
-  //             );
-  //           }
-  //         } catch (err) {
-  //           console.error(
-  //             `[CAMPAIGN ERROR] ❌ ${campaign._id}`,
-  //             err
-  //           );
-  //         } finally {
-  //           campaign.isProcessing = false;
-  //           await campaign.save();
+              campaign.nextRunAt = new Date(
+                campaign.nextRunAt.getTime() + delayMs
+              );
+            }
+          } catch (err) {
+            console.error(
+              `[CAMPAIGN ERROR] ❌ ${campaign._id}`,
+              err
+            );
+          } finally {
+            campaign.isProcessing = false;
+            await campaign.save();
 
-  //           console.log(
-  //             `[CAMPAIGN] ⏱ Done ${campaign._id} in ${
-  //               Date.now() - campaignStart
-  //             }ms`
-  //           );
-  //         }
-  //       }
-  //     } catch (err) {
-  //       console.error("[CRON] ❌ Fatal drip error:", err);
-  //     }
-  //   },
-  //   { timezone: "Asia/Kolkata" }
-  // );
+            console.log(
+              `[CAMPAIGN] ⏱ Done ${campaign._id} in ${
+                Date.now() - campaignStart
+              }ms`
+            );
+          }
+        }
+      } catch (err) {
+        console.error("[CRON] ❌ Fatal drip error:", err);
+      }
+    },
+    { timezone: "Asia/Kolkata" }
+  );
 
   /* =====================================================
      ERROR HANDLER

@@ -22,7 +22,7 @@ export default function DripCampaignApp() {
   const [showNewCampaign, setShowNewCampaign] = useState(false);
   const [campaignName, setCampaignName] = useState("");
   const [steps, setSteps] = useState<Step[]>([]);
-  const [contacts, setContacts] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<string[]>([]); // Now explicitly string[]
   const [fileName, setFileName] = useState("");
   const [errors, setErrors] = useState<string | null>(null);
 
@@ -37,7 +37,6 @@ export default function DripCampaignApp() {
       if (!response.ok) throw new Error("Failed to fetch campaigns");
       const data = await response.json();
 
-      // ✅ Normalize API response: ensure contacts & steps are arrays
       const normalized = data.map((c: any) => ({
         ...c,
         contacts: Array.isArray(c.contacts) ? c.contacts : [],
@@ -66,32 +65,164 @@ export default function DripCampaignApp() {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.group("📂 Excel Upload Debug");
+
     setErrors(null);
     const file = e.target.files?.[0];
-    if (!file) return;
 
-    setFileName(file.name);
+    console.log("File selected:", file);
+
+    if (!file) {
+      console.warn("No file selected");
+      console.groupEnd();
+      return;
+    }
+
+    setFileName("");
+    setContacts([]);
+
     const reader = new FileReader();
 
     reader.onload = (event) => {
       try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        console.log("FileReader loaded");
+
+        const buffer = event.target?.result as ArrayBuffer;
+        console.log("ArrayBuffer size:", buffer.byteLength);
+
+        const data = new Uint8Array(buffer);
         const workbook = XLSX.read(data, { type: "array" });
+
+        console.log("Workbook:", workbook);
+        console.log("Sheet names:", workbook.SheetNames);
+
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet);
-        if (json.length === 0) {
-          setErrors("Uploaded file is empty.");
-          setFileName("");
-          setContacts([]);
+
+        console.log("Using sheet:", sheetName);
+        console.log("Worksheet ref:", worksheet["!ref"]);
+
+        // -------- HEADER DEBUGGING --------
+        const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
+        const headers: string[] = [];
+
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+          const cell = worksheet[cellAddress];
+          let header = cell ? cell.v : "";
+          if (typeof header === "string") header = header.trim();
+          headers[C] = header;
+        }
+
+        console.log("Raw headers:", headers);
+
+        const normalizedHeaders = headers.map((h) =>
+          h.toLowerCase().replace(/\s+/g, " ").trim()
+        );
+
+        console.log("Normalized headers:", normalizedHeaders);
+
+        const whatsappColIndex = normalizedHeaders.findIndex(
+          (h) => h === "whatsapp number" || h === "whatsappnumber"
+        );
+        const phoneColIndex = normalizedHeaders.findIndex(
+          (h) => h === "phone" || h === "phone number"
+        );
+
+        console.log("WhatsApp column index:", whatsappColIndex);
+        console.log("Phone column index:", phoneColIndex);
+
+        if (whatsappColIndex === -1 && phoneColIndex === -1) {
+          setErrors(
+            "No 'WhatsApp number' or 'Phone' column found. Please ensure your Excel file has one of these columns."
+          );
+          console.error("Required columns not found");
+          console.groupEnd();
           return;
         }
-        setContacts(json);
+
+        // -------- ROW DEBUGGING --------
+        const json: any[] = XLSX.utils.sheet_to_json(worksheet, {
+          defval: "",
+          raw: true,
+          header: 1,
+        });
+
+        console.log("Total rows (including header):", json.length);
+        console.log("First 5 rows:", json.slice(0, 5));
+
+        const extractedContacts: string[] = [];
+
+        for (let i = 1; i < json.length; i++) {
+          const row = json[i];
+          console.log(`Row ${i}:`, row);
+
+          let whatsapp = null;
+
+          if (whatsappColIndex !== -1 && row[whatsappColIndex] !== undefined) {
+            whatsapp = row[whatsappColIndex];
+            console.log(`Row ${i} WhatsApp raw:`, whatsapp);
+          } else if (phoneColIndex !== -1 && row[phoneColIndex] !== undefined) {
+            whatsapp = row[phoneColIndex];
+            console.log(`Row ${i} Phone raw:`, whatsapp);
+          }
+
+          if (!whatsapp) {
+            console.warn(`Row ${i} skipped (empty number)`);
+            continue;
+          }
+
+          if (typeof whatsapp === "number") {
+            // Convert number to full string without scientific notation
+            whatsapp = Math.trunc(whatsapp).toString();
+          }
+
+          if (typeof whatsapp !== "string") {
+            console.warn(`Row ${i} invalid type:`, typeof whatsapp);
+            continue;
+          }
+
+          const cleanNumber = whatsapp.replace(/\D/g, "");
+          console.log(`Row ${i} cleaned number:`, cleanNumber);
+
+          if (!cleanNumber) continue;
+
+          if (cleanNumber.length === 10) {
+            extractedContacts.push("91" + cleanNumber);
+            console.log(`Row ${i} accepted →`, "91" + cleanNumber);
+          } else if (
+            cleanNumber.length === 12 &&
+            cleanNumber.startsWith("91")
+          ) {
+            extractedContacts.push(cleanNumber);
+            console.log(`Row ${i} accepted →`, cleanNumber);
+          } else {
+            console.warn(`Row ${i} rejected (invalid length):`, cleanNumber);
+          }
+        }
+
+        console.log("Final extracted contacts:", extractedContacts);
+        console.log("Total valid contacts:", extractedContacts.length);
+
+        if (extractedContacts.length === 0) {
+          setErrors(
+            "No valid WhatsApp numbers found. Ensure your 'WhatsApp number' or 'Phone' column contains 10-digit numbers."
+          );
+          console.error("No valid numbers extracted");
+          console.groupEnd();
+          return;
+        }
+
+        setContacts(extractedContacts);
+        setFileName(file.name);
+        console.log("Upload successful");
       } catch (err) {
         console.error("File parsing error:", err);
-        setErrors("Invalid file format. Please upload a valid Excel file.");
-        setFileName("");
-        setContacts([]);
+        setErrors(
+          "Invalid file format. Please upload a valid Excel (.xlsx/.xls) or CSV file."
+        );
+      } finally {
+        console.groupEnd();
       }
     };
 
@@ -154,7 +285,7 @@ export default function DripCampaignApp() {
     const campaign = {
       name: campaignName.trim(),
       steps,
-      contacts,
+      contacts, // Now array of strings like ["918000000000", ...]
       status: "draft" as const,
     };
 
@@ -171,7 +302,6 @@ export default function DripCampaignApp() {
       }
 
       const data = await response.json();
-      // Normalize new campaign too
       const normalized = {
         ...data,
         contacts: Array.isArray(data.contacts) ? data.contacts : [],
@@ -198,7 +328,9 @@ export default function DripCampaignApp() {
       );
       if (!response.ok) throw new Error("Operation failed");
       const data = await response.json();
-      setCampaigns(campaigns.map((c) => (c._id === _id ? { ...c, ...data } : c)));
+      setCampaigns(
+        campaigns.map((c) => (c._id === _id ? { ...c, ...data } : c))
+      );
     } catch (error) {
       console.error("Error updating campaign:", error);
       setErrors("Failed to update campaign status.");
@@ -213,7 +345,7 @@ export default function DripCampaignApp() {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Deletion failed");
-      setCampaigns(campaigns.filter((c) => c.id !== id));
+      setCampaigns(campaigns.filter((c) => c._id !== id)); // Use _id consistently
     } catch (error) {
       console.error("Error deleting campaign:", error);
       setErrors("Failed to delete campaign.");
@@ -326,11 +458,16 @@ export default function DripCampaignApp() {
                       <div className="flex items-center gap-1 text-sm text-gray-600">
                         <FileSpreadsheet size={14} className="text-green-600" />
                         <span>
-                          {fileName} ({contacts.length} contacts)
+                          {fileName} ({contacts.length} WhatsApp numbers)
                         </span>
                       </div>
                     )}
                   </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    File must contain a column named{" "}
+                    <strong>WhatsApp number</strong> (or <strong>Phone</strong>
+                    ). Numbers should be 10 digits (e.g., 8000000000).
+                  </p>
                 </div>
 
                 <div className="mb-4">
@@ -651,7 +788,7 @@ export default function DripCampaignApp() {
                           </button>
                         )}
                         <button
-                          onClick={() => deleteCampaign(campaign.id)}
+                          onClick={() => deleteCampaign(campaign._id)}
                           className="flex items-center gap-1 px-3 py-1.5 border border-red-300 text-red-600 rounded text-xs hover:bg-red-50"
                         >
                           <Trash2 size={12} />
