@@ -996,10 +996,10 @@ export async function getOrCreateContactId(lead: any) {
     contact = await Contact.create({
       id: uuidv4(),
       phone: lead.phone,
-      name: lead.full_name || "Facebook Lead",
+      name: lead.full_name || lead.phone ||"Facebook Lead",
       source: "facebook",
     });
   }
 
-  return contact._id;
+  return contact.id;
 }

@@ -93,50 +93,98 @@ export async function sendTextMessage(
   message: string,
   userId?: string
 ): Promise<SendMessageResult> {
+  console.log('📨 [WhatsApp Service] sendTextMessage called', {
+    to,
+    userId,
+    messageLength: message?.length,
+    timestamp: new Date().toISOString()
+  });
+
+  const start = Date.now();
+
   const credentials = await getWhatsAppCredentialsForUser(userId);
-  
+
   if (!credentials) {
-    console.error('[WhatsApp Service] Credentials not configured');
+    console.error('❌ [WhatsApp Service] Credentials not configured');
     return { success: false, error: 'WhatsApp credentials not configured' };
   }
-  
+
+  // Avoid logging full token
+  console.log('🔐 Credentials loaded', {
+    phoneNumberId: credentials.phoneNumberId,
+    tokenPreview: credentials.token?.slice(0, 8) + '***'
+  });
+
+  const url = `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'text',
+    text: { body: message },
+  };
+
+  console.log('➡️ Outgoing request', {
+    url,
+    method: 'POST',
+    payload
+  });
+
   try {
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${credentials.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to,
-          type: 'text',
-          text: { body: message },
-        }),
-      }
-    );
-    
-    const data = await response.json();
-    
-    if (response.ok && data.messages?.[0]?.id) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${credentials.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    console.log('📥 Response metadata', {
+      status: response.status,
+      ok: response.ok,
+      statusText: response.statusText,
+      timeMs: Date.now() - start
+    });
+
+    let data: any;
+
+    try {
+      data = await response.json();
+    } catch (err) {
+      const text = await response.text();
+      console.error('⚠️ Failed to parse JSON response. Raw text:', text);
+      throw err;
+    }
+
+    console.log('📦 Response body', data);
+
+    if (response.ok && data?.messages?.[0]?.id) {
+      console.log('✅ Message sent successfully', {
+        messageId: data.messages[0].id
+      });
+
       return { success: true, messageId: data.messages[0].id };
     }
-    
-    return { 
-      success: false, 
-      error: data.error?.message || 'Failed to send message' 
+
+    console.error('❌ WhatsApp API returned error', data?.error);
+
+    return {
+      success: false,
+      error: data?.error?.message || 'Failed to send message'
     };
+
   } catch (error) {
-    console.error('[WhatsApp Service] Error sending message:', error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    console.error('🔥 [WhatsApp Service] Exception sending message:', error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
+
 
 export async function sendTemplateMessage(
   to: string,
@@ -176,7 +224,7 @@ export async function sendTemplateMessage(
     
     try {
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+        `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
         {
           method: 'POST',
           headers: {
@@ -247,7 +295,7 @@ export async function sendImageMessage(
     }
     
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -306,7 +354,7 @@ export async function sendDocumentMessage(
     }
     
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -361,7 +409,7 @@ export async function sendVideoMessage(
     }
     
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -404,7 +452,7 @@ export async function sendReplyMessage(
   
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -452,7 +500,7 @@ export async function markMessageAsRead(
   
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -552,7 +600,7 @@ export async function sendFlowMessage(
     }
 
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {

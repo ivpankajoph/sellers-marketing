@@ -80,6 +80,119 @@ async function submitMetaTemplate(templatePayload: any) {
   }
 }
 
+export const uploadTemplateHeader = async (req: Request, res: Response) => {
+  console.log("🔥 uploadTemplateHeader() called");
+
+  try {
+    const file = req.file;
+
+    console.log("📁 Incoming file info:", {
+      exists: !!file,
+      originalname: file?.originalname,
+      mimetype: file?.mimetype,
+      size: file?.size,
+    });
+
+    if (!file) {
+      console.error("❌ No file uploaded");
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const accessToken = process.env.FB_PAGE_ACCESS_TOKEN;
+    const appId = process.env.META_APP_ID;
+
+    console.log("🔐 Environment values:", {
+      appId,
+      hasAccessToken: !!accessToken,
+    });
+
+    if (!accessToken || !appId) {
+      console.error("❌ Missing Meta credentials");
+      return res.status(500).json({ error: "Missing Meta credentials" });
+    }
+
+    const fileName = file.originalname;
+    const fileLength = file.size;
+    const fileType = file.mimetype;
+
+    console.log("🧾 Upload metadata", {
+      fileName,
+      fileLength,
+      fileType,
+    });
+
+    console.log("⏳ Step 1: Creating upload session…");
+
+    const sessionRes = await axios.post(
+      `https://graph.facebook.com/v24.0/${appId}/uploads`,
+      {},
+      {
+        params: {
+          file_name: fileName,
+          file_length: fileLength,
+          file_type: fileType,
+          access_token: accessToken,
+        },
+      }
+    );
+
+    console.log("✅ Upload session response:", sessionRes.data);
+
+    const uploadId = sessionRes.data.id;
+    console.log("📌 uploadId:", uploadId);
+
+    console.log("⏳ Step 2: Uploading binary…");
+
+    const uploadRes = await axios.post(
+      `https://graph.facebook.com/v24.0/${uploadId}`,
+      file.buffer,
+      {
+        headers: {
+          Authorization: `OAuth ${accessToken}`,
+          "Content-Type": fileType,
+          file_offset: 0,
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      }
+    );
+
+    console.log("✅ Binary upload response:", uploadRes.data);
+
+    const handle = uploadRes.data.h;
+    console.log("🎯 Final handle:", handle);
+
+    console.log("🚀 Upload complete, responding to client");
+
+    return res.json({
+      success: true,
+      handle,
+      previewUrl: `data:${fileType};base64,${file.buffer.toString("base64")}`,
+    });
+  }
+  catch (err: any) {
+    console.error("💥 Meta upload failed");
+
+    if (err?.response) {
+      console.error("📨 Axios response error:", {
+        status: err.response.status,
+        data: err.response.data,
+        headers: err.response.headers,
+      });
+    } else if (err?.request) {
+      console.error("📭 Axios request error (no response):", err.request);
+    } else {
+      console.error("⚠️ General error message:", err.message);
+    }
+
+    return res.status(500).json({
+      error: "Meta Upload Failed",
+      details: err?.response?.data || err.message,
+    });
+  }
+};
+
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -97,86 +210,14 @@ export async function registerRoutes(
     upload.single("file"),
     async (req, res) => {
       try {
-        if (!req.file) {
-          return res.status(400).json({ error: "No file uploaded" });
-        }
-
-        /* ===============================
-         1️⃣ Upload to Cloudinary (Preview)
-         =============================== */
-        const cloudinaryResult = await new Promise<any>((resolve, reject) => {
-          cloudinary.uploader
-            .upload_stream(
-              {
-                folder: "whatsapp-templates",
-                resource_type: "image",
-              },
-              (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-              }
-            )
-            .end(req.file.buffer);
-        });
-
-        /* ===============================
-         2️⃣ Upload to Meta (Media Handle)
-         =============================== */
-        const token =
-          process.env.WHATSAPP_TOKEN_NEW ||
-          process.env.WHATSAPP_TOKEN ||
-          process.env.FB_ACCESS_TOKEN;
-
-        const phoneNumberId = process.env.PHONE_NUMBER_ID;
-
-        if (!token || !phoneNumberId) {
-          return res.status(500).json({
-            error: "WhatsApp token or PHONE_NUMBER_ID missing",
-          });
-        }
-
-        const form = new FormData();
-        const blob = new Blob([req.file.buffer], {
-          type: req.file.mimetype,
-        });
-        form.append("file", blob, req.file.originalname);
-        form.append("type", req.file!.mimetype);
-        form.append("messaging_product", "whatsapp");
-
-        const metaResponse = await fetch(
-          `https://graph.facebook.com/v18.0/${phoneNumberId}/media`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: form,
-          }
-        );
-
-        const metaData = await metaResponse.json();
-
-        if (!metaResponse.ok) {
-          console.error("[Meta Media Upload Failed]", metaData);
-          return res.status(400).json({
-            error: "Meta media upload failed",
-            details: metaData,
-          });
-        }
-
-        /* ===============================
-         3️⃣ Success Response
-         =============================== */
-        res.json({
-          previewUrl: cloudinaryResult.secure_url,
-          mediaHandle: metaData.id,
-        });
-      } catch (err: any) {
-        console.error("[Template Header Upload Error]", err);
-        res.status(500).json({ error: "Image upload failed" });
+        await uploadTemplateHeader(req, res);
+      } catch (err) {
+        console.error("[Route Error]", err);
+        return res.status(500).json({ error: "Internal Server Error" });
       }
     }
   );
+
 
   app.get("/api/fb-automation/stats", async (req, res) => {
     const [totalLeads, sent, unsent, failed, activeAutomations] =
@@ -296,96 +337,96 @@ export async function registerRoutes(
     res.json(campaign);
   });
   // GET /api/reports/drip-campaigns
-app.get("/api/reports/drip-campaigns", async (req, res) => {
-  const {
-    search = "",
-    status,
-    fromDate,
-    toDate,
-    sortBy = "createdAt",
-    sortOrder = "desc",
-    page = 1,
-    limit = 10,
-  } = req.query;
+  app.get("/api/reports/drip-campaigns", async (req, res) => {
+    const {
+      search = "",
+      status,
+      fromDate,
+      toDate,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      limit = 10,
+    } = req.query;
 
-  const filter: any = {};
+    const filter: any = {};
 
-  if (search) {
-    filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { id: { $regex: search, $options: "i" } },
-    ];
-  }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { id: { $regex: search, $options: "i" } },
+      ];
+    }
 
-  if (status) filter.status = status;
+    if (status) filter.status = status;
 
-  if (fromDate || toDate) {
-    filter.createdAt = {};
-    if (fromDate) filter.createdAt.$gte = new Date(fromDate as string);
-    if (toDate) filter.createdAt.$lte = new Date(toDate as string);
-  }
+    if (fromDate || toDate) {
+      filter.createdAt = {};
+      if (fromDate) filter.createdAt.$gte = new Date(fromDate as string);
+      if (toDate) filter.createdAt.$lte = new Date(toDate as string);
+    }
 
-  const campaigns = await mongodb.Campaign.find(filter)
-    .sort({ [sortBy as string]: sortOrder === "asc" ? 1 : -1 })
-    .skip((+page - 1) * +limit)
-    .limit(+limit);
+    const campaigns = await mongodb.Campaign.find(filter)
+      .sort({ [sortBy as string]: sortOrder === "asc" ? 1 : -1 })
+      .skip((+page - 1) * +limit)
+      .limit(+limit);
 
-  const total = await mongodb.Campaign.countDocuments(filter);
+    const total = await mongodb.Campaign.countDocuments(filter);
 
-  res.json({
-    data: campaigns,
-    meta: {
-      total,
-      page: +page,
-      limit: +limit,
-    },
+    res.json({
+      data: campaigns,
+      meta: {
+        total,
+        page: +page,
+        limit: +limit,
+      },
+    });
   });
-});
   // GET /api/reports/drip-campaigns/:campaignId/summary
-app.get("/api/reports/drip-campaigns/:id/summary", async (req, res) => {
-  const campaignId = req.params.id;
+  app.get("/api/reports/drip-campaigns/:id/summary", async (req, res) => {
+    const campaignId = req.params.id;
 
-  const steps = await mongodb.CampaignLog.aggregate([
-    { $match: { campaignId } },
-    {
-      $group: {
-        _id: "$stepIndex",
-        sent: {
-          $sum: { $cond: [{ $eq: ["$status", "sent"] }, 1, 0] },
-        },
-        failed: {
-          $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
-        },
-        pending: {
-          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+    const steps = await mongodb.CampaignLog.aggregate([
+      { $match: { campaignId } },
+      {
+        $group: {
+          _id: "$stepIndex",
+          sent: {
+            $sum: { $cond: [{ $eq: ["$status", "sent"] }, 1, 0] },
+          },
+          failed: {
+            $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
+          },
+          pending: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+          },
         },
       },
-    },
-    { $sort: { _id: 1 } },
-  ]);
+      { $sort: { _id: 1 } },
+    ]);
 
-  res.json({ steps });
-});
+    res.json({ steps });
+  });
 
-// GET /api/reports/drip-campaigns/:campaignId/logs
-app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
-  const { stepIndex, status, contact, page = 1, limit = 20 } = req.query;
+  // GET /api/reports/drip-campaigns/:campaignId/logs
+  app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
+    const { stepIndex, status, contact, page = 1, limit = 20 } = req.query;
 
-  const filter: any = { campaignId: req.params.id };
+    const filter: any = { campaignId: req.params.id };
 
-  if (stepIndex !== undefined) filter.stepIndex = +stepIndex;
-  if (status) filter.status = status;
-  if (contact) filter.contact = { $regex: contact, $options: "i" };
+    if (stepIndex !== undefined) filter.stepIndex = +stepIndex;
+    if (status) filter.status = status;
+    if (contact) filter.contact = { $regex: contact, $options: "i" };
 
-  const logs = await mongodb.CampaignLog.find(filter)
-    .sort({ createdAt: -1 })
-    .skip((+page - 1) * +limit)
-    .limit(+limit);
+    const logs = await mongodb.CampaignLog.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((+page - 1) * +limit)
+      .limit(+limit);
 
-  const total = await mongodb.CampaignLog.countDocuments(filter);
+    const total = await mongodb.CampaignLog.countDocuments(filter);
 
-  res.json({ data: logs, total });
-});
+    res.json({ data: logs, total });
+  });
 
 
   app.get("/api/drip-campaigns", async (_req, res) => {
@@ -1266,20 +1307,20 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
       res.json({
         systemUser: systemUser
           ? {
-              id: systemUser.id,
-              email: systemUser.email,
-              name: systemUser.name,
-              role: systemUser.role,
-              isActive: systemUser.isActive,
-            }
+            id: systemUser.id,
+            email: systemUser.email,
+            name: systemUser.name,
+            role: systemUser.role,
+            isActive: systemUser.isActive,
+          }
           : null,
         regularUser: regularUser
           ? {
-              id: regularUser.id,
-              email: regularUser.email,
-              name: regularUser.name,
-              role: regularUser.role,
-            }
+            id: regularUser.id,
+            email: regularUser.email,
+            name: regularUser.name,
+            role: regularUser.role,
+          }
           : null,
       });
     } catch (error) {
@@ -1336,6 +1377,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
       res.status(500).json({ message: "Failed to get chats" });
     }
   });
+
 
   app.get("/api/chats/window", async (req, res) => {
     try {
@@ -1529,8 +1571,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
             .pop();
           const promptMessage =
             lastInboundMessage?.content ||
-            `Greet ${
-              name || "the customer"
+            `Greet ${name || "the customer"
             } warmly and introduce yourself as per your instructions.`;
 
           const aiMessage = await aiService.generateAgentResponse(
@@ -1904,7 +1945,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
       }
 
       res.json(template);
-    } catch (error) {
+    } catch (error: any) {
       console.error("[Template Update Error]", error);
       res
         .status(500)
@@ -1969,7 +2010,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
       // );
 
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=id,name,status,category,language,quality_score,components,rejected_reason&limit=100&access_token=${token}`
+        `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=id,name,status,category,language,quality_score,components,rejected_reason&limit=100&access_token=${token}`
       );
 
       if (!response.ok) {
@@ -2086,7 +2127,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
 
       // Fetch templates from Meta Graph API with more fields
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
+        `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
       );
 
       if (!response.ok) {
@@ -2148,8 +2189,8 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
           metaTemplate.status === "APPROVED"
             ? "approved"
             : metaTemplate.status === "REJECTED"
-            ? "rejected"
-            : "pending";
+              ? "rejected"
+              : "pending";
         const now = new Date().toISOString();
 
         if (!exists) {
@@ -2292,7 +2333,7 @@ app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
       }
 
       /* ---------------- META API CALL ---------------- */
-      const url = `https://graph.facebook.com/v18.0/${wabaId}/message_templates`;
+      const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates`;
 
       console.log(`[SubmitApproval][${requestId}] POST ${url}`);
 

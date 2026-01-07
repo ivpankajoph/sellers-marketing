@@ -134,7 +134,7 @@ interface FlowDetail {
 }
 
 // ✅ Fixed: Removed trailing space in API_BASE
-const API_BASE = 'https://graph.facebook.com/v18.0';
+const API_BASE = 'https://graph.facebook.com/v21.0';
 const BEARER_TOKEN = 'EAAO1YPeIbdABQH1TresAdKODLNRGydKZBByQHNNKXsZASpIV5lZAD6MLMGdgL8t3rHGhlZBr089UfdURhsQJTd9aZCsbbGeFSsZAhZAAholXOt5z88zGHxfwNfx0wIEuWSpglj95e5ZAK5u4DlytGbWT6OqNxq4bEuNxAjtAYxnoMVXhAQIWZBo1ZCk77rgvdGkgZDZD';
 const WABA_ID = '3646219455517188';
 

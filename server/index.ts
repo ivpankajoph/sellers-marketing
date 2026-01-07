@@ -164,11 +164,12 @@ app.use(express.urlencoded({ extended: false }));
                 if(!templatedetail){
                   throw new Error("Template not found");
                 }
+
                 const template_name = templatedetail.name;
                 await retry(() =>
-                  sendTemplateMessage(contact,template_name )
+                  sendTemplateMessage(contact,template_name)
                 );
-
+                
                 await CampaignLog.create({
                   campaignId: campaign._id,
                   stepIndex: campaign.currentStep,

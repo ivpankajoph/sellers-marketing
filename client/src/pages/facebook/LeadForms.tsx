@@ -64,7 +64,7 @@ const FacebookLeadsManager: React.FC = () => {
     let allLeads: Lead[] = [];
     let url:
       | string
-      | null = `https://graph.facebook.com/v18.0/${formId}/leads?access_token=${ACCESS_TOKEN}&limit=100`;
+      | null = `https://graph.facebook.com/v21.0/${formId}/leads?access_token=${ACCESS_TOKEN}&limit=100`;
 
     while (url) {
       const res: any = await fetch(url);
@@ -75,7 +75,7 @@ const FacebookLeadsManager: React.FC = () => {
       allLeads = allLeads.concat(data.data || []);
 
       url = data.paging?.cursors?.after
-        ? `https://graph.facebook.com/v18.0/${formId}/leads?access_token=${ACCESS_TOKEN}&limit=100&after=${data.paging.cursors.after}`
+        ? `https://graph.facebook.com/v21.0/${formId}/leads?access_token=${ACCESS_TOKEN}&limit=100&after=${data.paging.cursors.after}`
         : null;
     }
 
@@ -111,7 +111,7 @@ const FacebookLeadsManager: React.FC = () => {
         setLoadingForms(true);
         setError(null);
         const res = await fetch(
-          `https://graph.facebook.com/v18.0/${PAGE_ID}/leadgen_forms?access_token=${ACCESS_TOKEN}`
+          `https://graph.facebook.com/v21.0/${PAGE_ID}/leadgen_forms?access_token=${ACCESS_TOKEN}`
         );
         if (!res.ok) throw new Error("Failed to fetch forms");
         const data = await res.json();

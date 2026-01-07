@@ -234,6 +234,8 @@ export class MongoStorage implements IStorage {
       const updateData: Partial<Chat> = {
         lastMessage: newMessage.content,
         lastMessageTime: newMessage.timestamp,
+          lastInboundMessage: newMessage.content,        // add this
+          lastInboundMessageTime: newMessage.timestamp,
       };
 
       if (message.direction === "inbound") {
@@ -626,7 +628,7 @@ export class MongoStorage implements IStorage {
   async getChats(): Promise<Chat[]> {
     const chats = await mongodb.findMany<Chat>("chats", {});
     const contacts = await this.getContacts();
-
+    
     return chats.map((chat) => {
       const contact = contacts.find((c) => c.id === chat.contactId);
       return {

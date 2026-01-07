@@ -121,7 +121,7 @@ function normalizePhone(phone: string): string {
 
 async function downloadMediaWithAuth(mediaUrl: string, filename: string, openInNewTab: boolean = false) {
   try {
-    const response = await fetch(`/api/webhook/whatsapp/media/${mediaUrl}`, {
+    const response = await fetchWithAuth(`/api/webhook/whatsapp/media/${mediaUrl}`, {
       headers: getAuthHeaders()
     });
     

@@ -106,7 +106,7 @@ function getWhatsAppCredentials(): {
 
 //     try {
 //       const response = await fetch(
-//         `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+//         `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
 //         {
 //           method: "POST",
 //           headers: {
@@ -286,7 +286,7 @@ function getWhatsAppCredentials(): {
 
 //     try {
 //       const response = await fetch(
-//         `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+//         `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
 //         {
 //           method: "POST",
 //           headers: {
@@ -446,7 +446,7 @@ export async function sendTemplateMessage(
 
     try {
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+        `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
         {
           method: "POST",
           headers: {
@@ -541,7 +541,7 @@ export async function getAvailableTemplates(): Promise<{
 
   try {
     const phoneInfoResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}?fields=account_mode`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}?fields=account_mode`,
       {
         headers: {
           Authorization: `Bearer ${credentials.token}`,

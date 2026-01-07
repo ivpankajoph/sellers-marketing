@@ -267,7 +267,7 @@ async function verifyWhatsAppConnection(credentials: Record<string, string>): Pr
     }
 
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${phoneNumberId}`,
+      `https://graph.facebook.com/v21.0/${phoneNumberId}`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`
@@ -307,7 +307,7 @@ async function verifyFacebookConnection(credentials: Record<string, string>): Pr
     }
 
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/me?access_token=${accessToken}`
+      `https://graph.facebook.com/v21.0/me?access_token=${accessToken}`
     );
 
     if (!response.ok) {

@@ -64,9 +64,6 @@ export default function AddTemplate() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    /* ===============================
-     1️⃣ Client-side validation
-     =============================== */
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Image must be less than 5MB");
       return;
@@ -77,9 +74,6 @@ export default function AddTemplate() {
       return;
     }
 
-    /* ===============================
-     2️⃣ Upload to backend
-     =============================== */
     const formData = new FormData();
     formData.append("file", file);
 
@@ -94,19 +88,16 @@ export default function AddTemplate() {
         throw new Error(err?.error || "Upload failed");
       }
 
-      const { previewUrl, mediaHandle } = await res.json();
+      const data = await res.json();
 
-      /* ===============================
-       3️⃣ Store BOTH values
-       =============================== */
+      // 👇 for UI preview
+      setHeaderImage(data.previewUrl);
+      
 
-      // 🔹 For UI preview only
-      setHeaderImage(previewUrl);
+      // 👇 IMPORTANT — store meta handle
+      setHeaderMediaHandle(data.handle);
 
-      // 🔹 REQUIRED for Meta template approval
-      setHeaderMediaHandle(mediaHandle);
-
-      // Optional: keep original file if needed
+      // optional
       setHeaderImageFile(file);
 
       toast.success("Image uploaded successfully");
@@ -115,6 +106,7 @@ export default function AddTemplate() {
       toast.error(err.message || "Image upload failed");
     }
   };
+
 
   const removeImage = () => {
     setHeaderImage("");
@@ -441,11 +433,10 @@ export default function AddTemplate() {
                   <div className="flex justify-between items-center">
                     <Label htmlFor="body">Body Text *</Label>
                     <span
-                      className={`text-xs ${
-                        body.length >= 1000
+                      className={`text-xs ${body.length >= 1000
                           ? "text-red-600 font-medium"
                           : "text-muted-foreground"
-                      }`}
+                        }`}
                     >
                       {body.length}/1000
                     </span>

@@ -211,7 +211,7 @@ const WhatsAppFlowBuilder: React.FC = () => {
       formData.append('name', flowPayload.name);
       formData.append('categories', JSON.stringify(flowPayload.categories));
 
-      const response = await fetch(`https://graph.facebook.com/v18.0/${WABA_ID}/flows`, {
+      const response = await fetch(`https://graph.facebook.com/v21.0/${WABA_ID}/flows`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${ACCESS_TOKEN}`,

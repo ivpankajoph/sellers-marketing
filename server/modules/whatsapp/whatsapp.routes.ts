@@ -11,7 +11,7 @@ router.post('/send', controller.sendMessage);
 router.post('/send-template', requireAuth, controller.sendTemplateMessageEndpoint);
 router.get('/conversations', controller.getConversations);
 router.get('/conversations/:phone', controller.getConversation);
-router.get('/media/:mediaId', requireAuth, controller.getMediaUrl);
+router.get('/media/:mediaId', controller.getMediaUrl);
 
 router.post('/flows/sync', requireAuth, flowsController.syncFlows);
 router.post('/flows/create', requireAuth, flowsController.createFlow);

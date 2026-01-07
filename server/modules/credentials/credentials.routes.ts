@@ -103,7 +103,7 @@ router.post('/test/whatsapp', requireAuth, async (req: Request, res: Response) =
     }
 
     const testResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${creds.phoneNumberId}?fields=verified_name,display_phone_number`,
+      `https://graph.facebook.com/v21.0/${creds.phoneNumberId}?fields=verified_name,display_phone_number`,
       {
         headers: {
           Authorization: `Bearer ${creds.whatsappToken}`,
@@ -187,7 +187,7 @@ router.post('/test/facebook', requireAuth, async (req: Request, res: Response) =
     }
 
     const testResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me?fields=id,name&access_token=${creds.facebookAccessToken}`
+      `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${creds.facebookAccessToken}`
     );
 
     if (!testResponse.ok) {

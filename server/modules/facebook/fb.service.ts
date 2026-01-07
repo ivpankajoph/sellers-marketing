@@ -51,7 +51,7 @@ async function getPageAccessToken(userId: string = 'system'): Promise<string> {
   
   // First, check if this is already a Page Access Token by trying to get page info
   try {
-    const meResponse = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${token}`);
+    const meResponse = await fetch(`https://graph.facebook.com/v21.0/me?access_token=${token}`);
     const meData = await meResponse.json();
     
     // If this returns a page (has category field), it's a Page Access Token
@@ -64,7 +64,7 @@ async function getPageAccessToken(userId: string = 'system'): Promise<string> {
     
     // If it's a user token, try to get the page token from /me/accounts
     console.log('[FB] Token is a User Access Token, fetching Page Access Token...');
-    const accountsResponse = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${token}`);
+    const accountsResponse = await fetch(`https://graph.facebook.com/v21.0/me/accounts?access_token=${token}`);
     const accountsData = await accountsResponse.json();
     
     if (accountsData.data && accountsData.data.length > 0) {
@@ -135,7 +135,7 @@ export async function syncLeadForms(userId: string = 'system'): Promise<LeadForm
 
   try {
     const pageToken = await getPageAccessToken(userId);
-    const url = `https://graph.facebook.com/v18.0/${creds.pageId}/leadgen_forms?access_token=${pageToken}`;
+    const url = `https://graph.facebook.com/v21.0/${creds.pageId}/leadgen_forms?access_token=${pageToken}`;
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -221,7 +221,7 @@ export async function syncLeadsForForm(formId: string): Promise<Lead[]> {
 
   try {
     const pageToken = await getPageAccessToken();
-    const url = `https://graph.facebook.com/v18.0/${form.fbFormId}/leads?access_token=${pageToken}`;
+    const url = `https://graph.facebook.com/v21.0/${form.fbFormId}/leads?access_token=${pageToken}`;
     const response = await fetch(url);
     
     if (!response.ok) {

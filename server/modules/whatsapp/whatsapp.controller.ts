@@ -845,7 +845,7 @@ async function sendWhatsAppMessage(to: string, message: string) {
     throw new Error("WhatsApp credentials not configured");
   }
 
-  const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+  const url = `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`;
 
   try {
     const response = await fetch(url, {
@@ -940,7 +940,7 @@ export async function getMediaUrl(req: Request, res: Response) {
       });
     }
 
-    const mediaInfoUrl = `https://graph.facebook.com/v18.0/${mediaId}`;
+    const mediaInfoUrl = `https://graph.facebook.com/v21.0/${mediaId}`;
     const mediaInfoResponse = await fetch(mediaInfoUrl, {
       headers: {
         Authorization: `Bearer ${credentials.token}`,
@@ -1024,7 +1024,7 @@ export async function sendTemplateMessage(
     throw new Error("WhatsApp credentials not configured");
   }
 
-  const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+  const url = `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`;
 
   const payload: any = {
     messaging_product: "whatsapp",

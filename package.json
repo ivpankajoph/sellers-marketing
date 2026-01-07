@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev:client": "vite dev --port 8080",
-    "dev": "NODE_ENV=development npx tsx server/index.ts",
+    "dev": "NODE_ENV=development nodemon --watch server --ext ts,js --exec \"npx tsx server/index.ts\"",
     "build": "npx tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
@@ -116,6 +116,7 @@
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
+    "nodemon": "^3.1.11",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.14",
     "ts-node": "^10.9.2",

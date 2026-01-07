@@ -323,7 +323,7 @@ export async function sendCustomMessage(
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${credentials.phoneNumberId}/messages`,
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/messages`,
       {
         method: "POST",
         headers: {
