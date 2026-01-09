@@ -92,7 +92,7 @@ export default function AddTemplate() {
 
       // 👇 for UI preview
       setHeaderImage(data.previewUrl);
-      
+
 
       // 👇 IMPORTANT — store meta handle
       setHeaderMediaHandle(data.handle);
@@ -203,6 +203,9 @@ export default function AddTemplate() {
       headerType: headerType === "none" ? null : headerType,
       headerText: headerType === "text" ? headerText : null,
       headerImage: headerType === "image" ? headerMediaHandle : null,
+
+      previewUrl: headerType === "image" ? headerImage : null,
+
       content: body,
       footer: footer || null,
       buttons: validButtons.length > 0 ? validButtons : undefined,
@@ -434,8 +437,8 @@ export default function AddTemplate() {
                     <Label htmlFor="body">Body Text *</Label>
                     <span
                       className={`text-xs ${body.length >= 1000
-                          ? "text-red-600 font-medium"
-                          : "text-muted-foreground"
+                        ? "text-red-600 font-medium"
+                        : "text-muted-foreground"
                         }`}
                     >
                       {body.length}/1000

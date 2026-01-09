@@ -39,7 +39,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
-
+    
     res.json({ 
       success: true, 
       user: {
@@ -68,7 +68,7 @@ router.post('/register', async (req: Request, res: Response) => {
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
-
+ 
     const user = await authService.createUser(username, password, name, email);
     
     if (!user) {

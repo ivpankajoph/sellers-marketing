@@ -463,7 +463,7 @@ const TemplateSchema = new Schema(
     },
     headerText: String,
     headerImageUrl: String,
-
+    previewUrl :String,
     content: { type: String, required: true },
     footer: String,
 

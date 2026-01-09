@@ -80,6 +80,15 @@ async function submitMetaTemplate(templatePayload: any) {
   }
 }
 
+import { v2 as cloudinaryV2 } from "cloudinary";
+
+// Configure Cloudinary (do this once in your app, e.g., in server.ts or config)
+cloudinaryV2.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 export const uploadTemplateHeader = async (req: Request, res: Response) => {
   console.log("🔥 uploadTemplateHeader() called");
 
@@ -115,13 +124,33 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
     const fileLength = file.size;
     const fileType = file.mimetype;
 
-    console.log("🧾 Upload metadata", {
-      fileName,
-      fileLength,
-      fileType,
+    // === Step A: Upload to Cloudinary for preview ===
+    console.log("☁️ Uploading to Cloudinary for preview…");
+    const cloudinaryResult = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinaryV2.uploader.upload_stream(
+        {
+          folder: "whatsapp/template-headers",
+          public_id: fileName.replace(/\.[^/.]+$/, ""), // strip extension
+          resource_type: "image",
+          overwrite: false,
+        },
+        (error, result) => {
+          if (error) {
+            console.error("❌ Cloudinary upload error:", error);
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
+      );
+      uploadStream.end(file.buffer);
     });
 
-    console.log("⏳ Step 1: Creating upload session…");
+    const previewUrl = (cloudinaryResult as any).secure_url;
+    console.log("✅ Cloudinary preview URL:", previewUrl);
+
+    // === Step B: Upload to Meta (as before) ===
+    console.log("⏳ Step 1: Creating Meta upload session…");
 
     const sessionRes = await axios.post(
       `https://graph.facebook.com/v24.0/${appId}/uploads`,
@@ -136,12 +165,12 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
       }
     );
 
-    console.log("✅ Upload session response:", sessionRes.data);
+    console.log("✅ Meta upload session response:", sessionRes.data);
 
     const uploadId = sessionRes.data.id;
-    console.log("📌 uploadId:", uploadId);
+    console.log("📌 Meta uploadId:", uploadId);
 
-    console.log("⏳ Step 2: Uploading binary…");
+    console.log("⏳ Step 2: Uploading binary to Meta…");
 
     const uploadRes = await axios.post(
       `https://graph.facebook.com/v24.0/${uploadId}`,
@@ -157,21 +186,20 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
       }
     );
 
-    console.log("✅ Binary upload response:", uploadRes.data);
+    console.log("✅ Meta binary upload response:", uploadRes.data);
 
     const handle = uploadRes.data.h;
-    console.log("🎯 Final handle:", handle);
+    console.log("🎯 Final Meta media handle:", handle);
 
     console.log("🚀 Upload complete, responding to client");
 
     return res.json({
       success: true,
-      handle,
-      previewUrl: `data:${fileType};base64,${file.buffer.toString("base64")}`,
+      handle,               // ← Send to Meta when creating template
+      previewUrl,           // ← Public URL for UI preview
     });
-  }
-  catch (err: any) {
-    console.error("💥 Meta upload failed");
+  } catch (err: any) {
+    console.error("💥 Upload failed");
 
     if (err?.response) {
       console.error("📨 Axios response error:", {
@@ -186,7 +214,7 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
     }
 
     return res.status(500).json({
-      error: "Meta Upload Failed",
+      error: "Upload Failed",
       details: err?.response?.data || err.message,
     });
   }
@@ -1852,6 +1880,7 @@ export async function registerRoutes(
         content: req.body.content,
         headerText: req.body.headerText,
         headerImageUrl, // ← Just store the Meta ID here
+        previewUrl: req.body.previewUrl,
         body: req.body.body,
         footer: req.body.footer,
         buttons: req.body.buttons,
@@ -1867,6 +1896,33 @@ export async function registerRoutes(
       res.status(500).json({ error: err.message });
     }
   });
+
+
+  const updateMetaTemplate = async (
+    metaTemplateId: string,
+    payload: any
+  ) => {
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v24.0/${metaTemplateId}`,
+        payload,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.FB_PAGE_ACCESS_TOKEN}`,
+          },
+        }
+      );
+
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.response?.data || error.message,
+      };
+    }
+  };
+
 
   app.put("/api/templates/:id", async (req, res) => {
     try {
@@ -1911,38 +1967,41 @@ export async function registerRoutes(
       console.log("[Template Update] MongoDB template updated:", template);
 
       // -------------------- META TEMPLATE SUBMISSION --------------------
+      // -------------------- META TEMPLATE UPDATE --------------------
       if (template.metaTemplateId) {
         try {
           const metaPayload = buildMetaTemplate(template);
 
-          // Generate a unique name for WhatsApp (avoid "content exists" error)
-          const uniqueMetaName = `${metaPayload.name}_${shortSuffix(4)}`;
-          metaPayload.name = uniqueMetaName;
+          // ❗ DO NOT CHANGE NAME
+          delete metaPayload.name;
 
-          const result = await submitMetaTemplate(metaPayload);
+          const result = await updateMetaTemplate(
+            template.metaTemplateId,
+            metaPayload
+          );
+
           if (result.success) {
-            // Update MongoDB with new metaTemplateId & set status PENDING
-            template.metaTemplateId = result.newMetaTemplateId;
             template.metaStatus = "PENDING";
             await template.save();
 
             console.log(
-              "[Template Update] Submitted new Meta template version:",
-              result.newMetaTemplateId
+              "[Template Update] Meta template updated:",
+              template.metaTemplateId
             );
           } else {
             console.error(
-              "[Template Update] Meta submission failed:",
+              "[Template Update] Meta update failed:",
               result.error
             );
           }
         } catch (metaError) {
           console.error(
-            "[Template Update] Meta template submission error:",
+            "[Template Update] Meta update error:",
             metaError
           );
         }
       }
+
 
       res.json(template);
     } catch (error: any) {
