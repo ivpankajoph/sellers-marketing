@@ -1170,6 +1170,13 @@ export async function processScheduledBroadcasts(): Promise<void> {
 let schedulerInterval: NodeJS.Timeout | null = null;
 
 export function startScheduler(): void {
+  if (!process.env.MONGODB_URL) {
+    console.warn(
+      "[Scheduler] Skipping broadcast scheduler: MONGODB_URL is not configured"
+    );
+    return;
+  }
+
   if (schedulerInterval) {
     return;
   }

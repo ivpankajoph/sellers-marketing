@@ -27,7 +27,6 @@ import contactAnalyticsRoutes from "./modules/contactAnalytics/contactAnalytics.
 import leadManagementRoutes from "./modules/leadManagement/leadManagement.routes";
 import integrationRoutes from "./modules/integrations/integration.routes";
 import automationRoutes from "./modules/automation/automation.routes";
-import * as broadcastService from "./modules/broadcast/broadcast.service";
 import * as agentService from "./modules/aiAgents/agent.service";
 import * as openaiService from "./modules/openai/openai.service";
 import * as aiService from "./modules/ai/ai.service";
@@ -2821,9 +2820,6 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to get WhatsApp leads" });
     }
   });
-
-  // Start the broadcast scheduler
-  broadcastService.startScheduler();
 
   return httpServer;
 }

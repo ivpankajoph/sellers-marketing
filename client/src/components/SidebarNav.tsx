@@ -1,40 +1,28 @@
 // src/components/layout/SidebarNav.tsx
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import type { LucideIcon } from "lucide-react";
 import {
-  LayoutDashboard,
-  MessageSquare,
-  Megaphone,
-  GitBranch,
-  Users,
-  Settings,
-  LogOut,
-  Bell,
-  Search,
-  FileText,
-  LayoutGrid,
-  Bot,
   BarChart3,
+  Bot,
   ChevronDown,
   ChevronRight,
-  Facebook,
   Clock,
-  UserPlus,
-  UserCog,
-  Workflow,
-  ChevronLeft,
+  Facebook,
+  FileText,
+  GitBranch,
+  LayoutDashboard,
+  LayoutGrid,
+  LogOut,
+  Megaphone,
+  MessageSquare,
+  Settings,
   User,
-  ArrowRight,
-  ArrowLeft,
+  UserCog,
+  Users,
 } from "lucide-react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./ui/collapsible";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -42,6 +30,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "./ui/sidebar";
 
 interface Chat {
   id: string;
@@ -49,134 +49,24 @@ interface Chat {
   unreadCount: number;
 }
 
-interface NavItemProps {
-  item: any;
-  isCollapsed: boolean;
+interface NavSubItem {
+  label: string;
+  href: string;
+  accessIds?: string[];
 }
 
-const NavItem = ({ item, isCollapsed }: NavItemProps) => {
-  const [location, navigate] = useLocation();
-  const isActive =
-    location === item.href ||
-    (item.subItems && item.subItems.some((sub: any) => location === sub.href));
-  const [isOpen, setIsOpen] = useState(isActive);
-  const itemRef = useRef<HTMLDivElement>(null);
-
-  const handleToggle = (open: boolean) => {
-    setIsOpen(open);
-    if (open && itemRef.current) {
-      setTimeout(() => {
-        itemRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
-    }
-  };
-
-  const handleNavigation = (
-    e: React.MouseEvent<HTMLAnchorElement>,
-    href: string
-  ) => {
-    // Check if it's a special click (new tab, new window, etc.)
-    const isSpecialClick =
-      e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1;
-
-    if (!isSpecialClick) {
-      // Normal click - use client-side routing
-      e.preventDefault();
-      navigate(href);
-    }
-    // For special clicks, let the browser handle it naturally with the href
-  };
-
-  if (item.subItems) {
-    return (
-      <div ref={itemRef}>
-        <Collapsible
-          open={isOpen}
-          onOpenChange={handleToggle}
-          className="space-y-1"
-        >
-          <CollapsibleTrigger asChild>
-            <div
-              className={`
-                flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer select-none
-                ${
-                  isActive
-                    ? "bg-sidebar-accent/50 text-sidebar-accent-foreground"
-                    : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
-                }
-              `}
-              title={isCollapsed ? item.label : ""}
-            >
-              <div className="flex items-center gap-3">
-                <item.icon className="h-4 w-4 shrink-0" />
-                {!isCollapsed && item.label}
-              </div>
-              {!isCollapsed &&
-                (isOpen ? (
-                  <ChevronDown className="h-3 w-3 opacity-50" />
-                ) : (
-                  <ChevronRight className="h-3 w-3 opacity-50" />
-                ))}
-            </div>
-          </CollapsibleTrigger>
-          {!isCollapsed && (
-            <CollapsibleContent className="pl-9 space-y-1 animate-in slide-in-from-top-2 duration-200">
-              {item.subItems.map((sub: any) => (
-                <a
-                  key={sub.href}
-                  href={sub.href}
-                  onClick={(e) => handleNavigation(e, sub.href)}
-                  className={`
-                    block px-3 py-2 rounded-md text-xs font-medium transition-colors cursor-pointer
-                    ${
-                      location === sub.href
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-black hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
-                    }
-                  `}
-                >
-                  {sub.label}
-                </a>
-              ))}
-            </CollapsibleContent>
-          )}
-        </Collapsible>
-      </div>
-    );
-  }
-
-  return (
-    <a
-      href={item.href}
-      onClick={(e) => handleNavigation(e, item.href)}
-      className={`
-        flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors cursor-pointer
-        ${
-          isActive
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-black hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-        }
-      `}
-      title={isCollapsed ? item.label : ""}
-    >
-      <div className="flex items-center gap-3">
-        <item.icon className="h-4 w-4 shrink-0" />
-        {!isCollapsed && item.label}
-      </div>
-      {!isCollapsed && item.badge && (
-        <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-1.5 py-0.5 min-w-[20px] text-center">
-          {item.badge > 99 ? "99+" : item.badge}
-        </Badge>
-      )}
-      {isCollapsed && item.badge && (
-        <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500"></div>
-      )}
-    </a>
-  );
-};
+interface NavItemConfig {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+  pageId?: string;
+  accessIds?: string[];
+  badge?: number;
+  adminOnly?: boolean;
+  subItems?: NavSubItem[];
+}
 
 interface SidebarNavProps {
-  isMobile: boolean;
   onLogout: () => void;
 }
 
@@ -187,14 +77,54 @@ interface SidebarUser {
   role: string;
 }
 
-export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
-  const AUTH_USER_KEY = "whatsapp_auth_user";
+const AUTH_USER_KEY = "whatsapp_auth_user";
+const SIDEBAR_SCROLL_TOP_KEY = "app-sidebar-scroll-top";
 
-  const [location] = useLocation();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+const normalizePath = (rawPath: string) => {
+  const [path = "/"] = rawPath.split(/[?#]/);
+  if (path === "/") return path;
+  return path.replace(/\/+$/, "");
+};
+
+const isPathActive = (currentPath: string, targetPath: string) => {
+  const current = normalizePath(currentPath);
+  const target = normalizePath(targetPath);
+
+  if (target === "/") return current === "/";
+  if (current === target) return true;
+  return current.startsWith(`${target}/`);
+};
+
+const getNavItemKey = (item: NavItemConfig) =>
+  [item.pageId, item.label, item.href].filter(Boolean).join("::");
+
+const isGroupActive = (location: string, item: NavItemConfig) => {
+  if (!item.subItems || item.subItems.length === 0) return false;
+  const current = normalizePath(location);
+  const directMatch = current === normalizePath(item.href);
+  if (directMatch) return true;
+  return item.subItems.some((sub) => isPathActive(location, sub.href));
+};
+
+const isLeafActive = (location: string, item: NavItemConfig) =>
+  isPathActive(location, item.href);
+
+export default function SidebarNav({ onLogout }: SidebarNavProps) {
+  const [location, navigate] = useLocation();
   const { user } = useAuth();
+  const sidebarContentId = useId();
 
-  const { data: users = [], isLoading } = useQuery<SidebarUser[]>({
+  const [openSectionKeys, setOpenSectionKeys] = useState<string[]>([]);
+  const [selectedUser, setSelectedUser] = useState<SidebarUser | null>(() => {
+    try {
+      const raw = localStorage.getItem(AUTH_USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_error) {
+      return null;
+    }
+  });
+
+  const { data: users = [], isLoading: usersLoading } = useQuery<SidebarUser[]>({
     queryKey: ["users"],
     queryFn: async () => {
       const res = await fetch("/api/users/all");
@@ -203,303 +133,472 @@ export default function SidebarNav({ isMobile, onLogout }: SidebarNavProps) {
     },
   });
 
-  const updateAuthUserInStorage = (user: any) => {
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  };
-
-  const getInitialUser = () => {
-    try {
-      const raw = localStorage.getItem("whatsapp_auth_user");
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return null;
-  };
-
-  const [selectedUser, setSelectedUser] = useState<any>(getInitialUser());
   useEffect(() => {
-    if (!selectedUser && users.length > 0) {
-      setSelectedUser(users[0]);
-      updateAuthUserInStorage(users[0]);
+    if (users.length === 0) return;
+    const matched = selectedUser
+      ? users.find((currentUser) => currentUser.id === selectedUser.id)
+      : null;
+    const nextUser = matched || users[0];
+
+    if (!selectedUser || selectedUser.id !== nextUser.id) {
+      setSelectedUser(nextUser);
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(nextUser));
     }
-  }, [users]);
+  }, [users, selectedUser]);
 
   const { data: windowUnreadCount = 0 } = useQuery<number>({
     queryKey: ["/api/chats", "window-unread-count"],
     queryFn: async () => {
       const res = await fetch("/api/chats");
       if (!res.ok) return 0;
+
       const allChats: Chat[] = await res.json();
       const now = new Date();
       let totalUnread = 0;
+
       for (const chat of allChats) {
-        if (chat.unreadCount <= 0) continue;
-        if (chat.lastInboundMessageTime) {
-          const lastInbound = new Date(chat.lastInboundMessageTime);
-          const hoursDiff =
-            (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
-          if (hoursDiff <= 24) {
-            totalUnread += chat.unreadCount;
-          }
+        if (chat.unreadCount <= 0 || !chat.lastInboundMessageTime) continue;
+
+        const lastInbound = new Date(chat.lastInboundMessageTime);
+        const hoursDiff =
+          (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
+
+        if (hoursDiff <= 24) {
+          totalUnread += chat.unreadCount;
         }
       }
+
       return totalUnread;
     },
     refetchInterval: 10000,
   });
 
-  const navStructure = [
-    {
-      icon: LayoutDashboard,
-      label: "Dashboard",
-      href: "/",
-      pageId: "dashboard",
-    },
-    {
-      icon: Clock,
-      label: "24-Hour Window",
-      href: "/inbox/window",
-      pageId: "window-inbox",
-      badge: windowUnreadCount > 0 ? windowUnreadCount : undefined,
-    },
-    { icon: MessageSquare, label: "Inbox", href: "/inbox", pageId: "inbox" },
-    {
-      icon: Megaphone,
-      label: "Campaigns",
-      href: "/campaigns",
-      pageId: "broadcast",
-      subItems: [
-        { label: "Broadcasts", href: "/campaigns/broadcast" },
-        { label: "Schedule Messages", href: "/campaigns/schedule" },
-        { label: "Single Messages", href: "/campaigns/past" },
-      ],
-    },
-    {
-      icon: GitBranch,
-      label: "Automation",
-      href: "/automation/dashboard",
-      pageId: "auto-reply",
-      subItems: [
-        { label: "Facebook Lead Automation", href: "/automation/triggers" },
-        { label: "Flows", href: "/whatsapp/flows" },
-        { label: "Create Flows", href: "/create-whatsappflow" },
-        { label: "Drip Campaigns", href: "/automation/campaigns" },
-        // { label: "Analytics", href: "/automation/analytics" },
-        { label: "Interest Lists", href: "/automation/interest" },
-        // { label: "Follow-up", href: "/automation/follow-up" },
-      ],
-    },
-    {
-      icon: LayoutGrid,
-      label: "Connect Apps",
-      href: "/apps/connect",
-      pageId: "flow-builder",
-    },
-    {
-      icon: FileText,
-      label: "Templates",
-      href: "/templates",
-      pageId: "templates",
-      subItems: [
-        { label: "Add Template", href: "/templates/add" },
-        { label: "Manage Templates", href: "/templates/manage" },
-      ],
-    },
-    {
-      icon: FileText,
-      label: "Usage & Billings",
-      href: "/templates",
-      subItems: [
-        { label: "Billing & Credits", href: "/settings/billing" },
-        { label: "Spendings", href: "/reports/spending" },
-        // { label: "Contact Usage Dashboard", href: "/contactusagedashboard" },
-        { label: "AI Tokens", href: "/aitokens" },
-        { label: "Whatsapp Tokens", href: "/whatsapptokens" },
-      ],
-    },
-    {
-      icon: Bot,
-      label: "AI Agent",
-      href: "/ai",
-      pageId: "ai-agents",
-      subItems: [
-        { label: "All Agents", href: "/ai/agents" },
-        { label: "New Agent", href: "/ai/new" },
-        { label: "Pre-filled Text", href: "/ai/prefilled" },
-      ],
-    },
-    {
-      icon: Facebook,
-      label: "Facebook",
-      href: "/facebook",
-      pageId: "facebook-leads",
-      subItems: [
-        { label: "Lead Forms", href: "/facebook/forms" },
-        // { label: "Leads", href: "/facebook/leads" },
-      ],
-    },
-    {
-      icon: BarChart3,
-      label: "Reports",
-      href: "/reports",
-      pageId: "reports-campaign",
-      subItems: [
-        { label: "Broadcast Report", href: "/reports/broadcast" },
-        // { label: "Campaign Perf.", href: "/reports/campaign" },
-        { label: "Agent Perf.", href: "/reports/agents" },
-        { label: "Contact Analytics", href: "/reports/contacts" },
-        { label: "Lead Assignments", href: "/reports/lead-assignments" },
-        { label: "Team Member Report", href: "/reports/user-activity" },
-        { label: "Blocked Contacts", href: "/reports/blocked" },
-        { label: "Drip Campaigns Report", href: "/report-dripcampaign" },
-        {
-          label: "Fb Lead Automation Report",
-          href: "/fblead-automation-report",
-        },
-        { label: "User Engagement", href: "/reports/user-engagement" },
-      ],
-    },
-    { icon: Users, label: "Contacts", href: "/contacts", pageId: "contacts" },
-    {
-      icon: UserCog,
-      label: "User Management",
-      href: "/user-management",
-      pageId: "user-management",
-      adminOnly: true,
-    },
-    {
-      icon: Settings,
-      label: "Settings",
-      href: "/settings",
-      pageId: "settings",
-      subItems: [
-        { label: "Profile Details", href: "/settings/profile" },
-        { label: "Webhook & API", href: "/settings/api" },
-      ],
-    },
-  ];
+  const navStructure = useMemo<NavItemConfig[]>(
+    () => [
+      {
+        icon: LayoutDashboard,
+        label: "Dashboard",
+        href: "/",
+        pageId: "dashboard",
+      },
+      {
+        icon: Clock,
+        label: "24-Hour Window",
+        href: "/inbox/window",
+        pageId: "window-inbox",
+        badge: windowUnreadCount > 0 ? windowUnreadCount : undefined,
+      },
+      {
+        icon: MessageSquare,
+        label: "Inbox",
+        href: "/inbox",
+        pageId: "inbox",
+      },
+      {
+        icon: Megaphone,
+        label: "Campaigns",
+        href: "/campaigns",
+        pageId: "broadcast",
+        subItems: [
+          { label: "Broadcasts", href: "/campaigns/broadcast" },
+          { label: "Schedule Messages", href: "/campaigns/schedule" },
+          { label: "Single Messages", href: "/campaigns/past" },
+        ],
+      },
+      {
+        icon: GitBranch,
+        label: "Automation",
+        href: "/automation/dashboard",
+        pageId: "auto-reply",
+        subItems: [
+          { label: "Facebook Lead Automation", href: "/automation/triggers" },
+          { label: "Flows", href: "/whatsapp/flows" },
+          { label: "Create Flows", href: "/create-whatsappflow" },
+          { label: "Drip Campaigns", href: "/automation/campaigns" },
+          { label: "Interest Lists", href: "/automation/interest" },
+        ],
+      },
+      {
+        icon: LayoutGrid,
+        label: "Connect Apps",
+        href: "/apps/connect",
+        pageId: "flow-builder",
+      },
+      {
+        icon: FileText,
+        label: "Templates",
+        href: "/templates",
+        pageId: "templates",
+        subItems: [
+          { label: "Add Template", href: "/templates/add" },
+          { label: "Manage Templates", href: "/templates/manage" },
+        ],
+      },
+      {
+        icon: FileText,
+        label: "Usage & Billings",
+        href: "/templates",
+        subItems: [
+          { label: "Billing & Credits", href: "/settings/billing" },
+          { label: "Spendings", href: "/reports/spending" },
+          { label: "AI Tokens", href: "/aitokens" },
+          { label: "Whatsapp Tokens", href: "/whatsapptokens" },
+        ],
+      },
+      {
+        icon: Bot,
+        label: "AI Agent",
+        href: "/ai",
+        pageId: "ai-agents",
+        subItems: [
+          { label: "All Agents", href: "/ai/agents" },
+          { label: "New Agent", href: "/ai/new" },
+          { label: "Pre-filled Text", href: "/ai/prefilled" },
+        ],
+      },
+      {
+        icon: Facebook,
+        label: "Facebook",
+        href: "/facebook",
+        pageId: "facebook-leads",
+        subItems: [{ label: "Lead Forms", href: "/facebook/forms" }],
+      },
+      {
+        icon: BarChart3,
+        label: "Reports",
+        href: "/reports",
+        pageId: "reports-campaign",
+        accessIds: ["reports-campaign", "reports-blocked", "reports-engagement"],
+        subItems: [
+          {
+            label: "Broadcast Report",
+            href: "/reports/broadcast",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Agent Perf.",
+            href: "/reports/agents",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Contact Analytics",
+            href: "/reports/contacts",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Lead Assignments",
+            href: "/reports/lead-assignments",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Team Member Report",
+            href: "/reports/user-activity",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Blocked Contacts",
+            href: "/reports/blocked",
+            accessIds: ["reports-blocked"],
+          },
+          {
+            label: "Drip Campaigns Report",
+            href: "/report-dripcampaign",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "Fb Lead Automation Report",
+            href: "/fblead-automation-report",
+            accessIds: ["reports-campaign"],
+          },
+          {
+            label: "User Engagement",
+            href: "/reports/user-engagement",
+            accessIds: ["reports-engagement"],
+          },
+        ],
+      },
+      {
+        icon: Users,
+        label: "Contacts",
+        href: "/contacts",
+        pageId: "contacts",
+      },
+      {
+        icon: UserCog,
+        label: "User Management",
+        href: "/user-management",
+        pageId: "user-management",
+        adminOnly: true,
+      },
+      {
+        icon: Settings,
+        label: "Settings",
+        href: "/settings",
+        pageId: "settings",
+        subItems: [
+          { label: "Profile Details", href: "/settings/profile" },
+          { label: "Webhook & API", href: "/settings/api" },
+        ],
+      },
+    ],
+    [windowUnreadCount]
+  );
 
-  const isSystemUser = user?.pageAccess && user.pageAccess.length > 0;
+  const isSystemUser = Boolean(user?.pageAccess && user.pageAccess.length > 0);
   const isAdmin = user?.role === "super_admin" || user?.role === "sub_admin";
+  const pageAccessSet = useMemo(() => new Set(user?.pageAccess ?? []), [user]);
 
-  const filteredNavStructure = navStructure.filter((item) => {
-    if (!isSystemUser) return true;
-    if (item.adminOnly && !isAdmin) return false;
-    if (!item.pageId) return true;
-    return user?.pageAccess?.includes(item.pageId) ?? false;
-  });
+  const hasAnyAccess = (accessIds?: string[], allowWhenMissing = true) => {
+    if (!accessIds || accessIds.length === 0) return allowWhenMissing;
+    return accessIds.some((id) => pageAccessSet.has(id));
+  };
 
-  const NavContent = () => (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div
-        className={`p-6 flex items-center ${
-          isCollapsed ? "justify-center" : "gap-3"
-        }`}
-      >
-        {!isCollapsed ? (
-          <>
-            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-              <MessageSquare className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="font-heading font-bold text-lg leading-none tracking-tight">
-                WhatsApp
-              </h1>
-              <span className="text-xs text-sidebar-foreground/60">
-                Business API
-              </span>
-            </div>
-          </>
-        ) : (
+  const filteredNavStructure = useMemo(() => {
+    return navStructure
+      .filter((item) => {
+        if (!isSystemUser) return true;
+        if (item.adminOnly && !isAdmin) return false;
+
+        const hasDirectPageAccess = item.pageId
+          ? pageAccessSet.has(item.pageId)
+          : false;
+        const hasGroupedAccess = hasAnyAccess(item.accessIds, false);
+
+        if (!item.pageId && !item.accessIds) return true;
+        return hasDirectPageAccess || hasGroupedAccess;
+      })
+      .map((item) => {
+        if (!isSystemUser || !item.subItems) return item;
+
+        const visibleSubItems = item.subItems.filter((sub) =>
+          hasAnyAccess(sub.accessIds, true)
+        );
+
+        return {
+          ...item,
+          subItems: visibleSubItems,
+        };
+      })
+      .filter((item) => !item.subItems || item.subItems.length > 0);
+  }, [isAdmin, isSystemUser, navStructure, pageAccessSet]);
+
+  useEffect(() => {
+    const activeGroupKeys = filteredNavStructure
+      .filter((item) => isGroupActive(location, item))
+      .map((item) => getNavItemKey(item));
+    if (activeGroupKeys.length === 0) return;
+
+    setOpenSectionKeys((prev) => Array.from(new Set([...prev, ...activeGroupKeys])));
+  }, [filteredNavStructure, location]);
+
+  useEffect(() => {
+    const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_TOP_KEY) || 0);
+    if (!saved) return;
+
+    const raf = requestAnimationFrame(() => {
+      const sidebarContent = document.getElementById(sidebarContentId);
+      if (sidebarContent) {
+        sidebarContent.scrollTop = saved;
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [location, sidebarContentId]);
+
+  const persistScroll = (scrollTop: number) => {
+    sessionStorage.setItem(SIDEBAR_SCROLL_TOP_KEY, String(scrollTop));
+  };
+
+  const handleGroupToggle = (item: NavItemConfig) => {
+    const key = getNavItemKey(item);
+    setOpenSectionKeys((prev) =>
+      prev.includes(key) ? prev.filter((value) => value !== key) : [...prev, key]
+    );
+  };
+
+  const handleNavigate = (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+    parentKey?: string
+  ) => {
+    const isSpecialClick =
+      event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1;
+
+    if (isSpecialClick) return;
+
+    event.preventDefault();
+    const sidebarContent = document.getElementById(sidebarContentId);
+    if (sidebarContent) {
+      persistScroll(sidebarContent.scrollTop);
+    }
+
+    if (parentKey) {
+      setOpenSectionKeys((prev) =>
+        prev.includes(parentKey) ? prev : [...prev, parentKey]
+      );
+    }
+
+    if (normalizePath(location) !== normalizePath(href)) {
+      navigate(href);
+    }
+  };
+
+  return (
+    <>
+      <SidebarHeader className="gap-0 p-0">
+        <div className="p-4 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
             <MessageSquare className="h-6 w-6 text-primary-foreground" />
           </div>
-        )}
-      </div>
+          <div>
+            <h1 className="font-heading font-bold text-lg leading-none tracking-tight text-black">
+              WhatsApp
+            </h1>
+            <span className="text-xs text-black/70">Business API</span>
+          </div>
+        </div>
 
-      <div className={`px-4 pb-4 ${isCollapsed ? "flex justify-center" : ""}`}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={`w-full flex items-center border border-black justify-between ${
-                isCollapsed ? "px-2" : ""
-              }`}
-            >
-              {!isCollapsed && (
-                <>
-                  <User className="h-4 w-4" />
-                  <span className="truncate">
-                    {selectedUser ? selectedUser.name : "Loading..."}
-                  </span>
-                </>
-              )}
-              {isCollapsed && <User className="h-4 w-4" />}
-              {!isCollapsed && <ChevronDown className="h-3 w-3 opacity-50" />}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-56 border border-black"
-          >
-            {isLoading && (
-              <div className="px-3 py-2 text-sm text-muted-foreground">
-                Loading users...
-              </div>
-            )}
-
-            {users.map((user) => (
-              <DropdownMenuItem
-                key={user.id}
-                onClick={() => {
-                  setSelectedUser(user);
-                  updateAuthUserInStorage(user);
-                  window.location.reload();
-                }}
-                className="cursor-pointer"
+        <div className="px-3 pb-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full flex items-center border border-black/30 justify-between text-black hover:bg-black/5"
               >
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  <div>
-                    <div className="font-medium">{user.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {user.email}
+                <User className="h-4 w-4" />
+                <span className="truncate">
+                  {selectedUser ? selectedUser.name : "Loading..."}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 border border-black/20">
+              {usersLoading && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  Loading users...
+                </div>
+              )}
+
+              {users.map((currentUser) => (
+                <DropdownMenuItem
+                  key={currentUser.id}
+                  onClick={() => {
+                    setSelectedUser(currentUser);
+                    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
+                    window.location.reload();
+                  }}
+                  className="cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    <div>
+                      <div className="font-medium">{currentUser.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {currentUser.email}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <div className="flex-1 px-3 py-1 space-y-1 overflow-y-auto">
-        {filteredNavStructure.map((item, idx) => (
-          <NavItem key={idx} item={item} isCollapsed={isCollapsed} />
-        ))}
-      </div>
-
-      {isMobile && (
-        <div className="p-4 border-t">
-          <Button
-            variant="outline"
-            className="w-full justify-start gap-2 text-destructive border-destructive/20 hover:bg-destructive/10"
-            onClick={onLogout}
-          >
-            <LogOut className="h-4 w-4" />
-            Log out
-          </Button>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      )}
-    </div>
-  );
+      </SidebarHeader>
 
-  return isMobile ? (
-    <NavContent />
-  ) : (
-    <div className="h-screen">
-      <NavContent />
-    </div>
+      <SidebarContent
+        id={sidebarContentId}
+        onScroll={(event) => persistScroll(event.currentTarget.scrollTop)}
+        className="px-2 pb-2"
+      >
+        <SidebarMenu>
+          {filteredNavStructure.map((item) => {
+            const itemKey = getNavItemKey(item);
+            const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
+            const isOpen = openSectionKeys.includes(itemKey);
+            const active = hasSubItems
+              ? isGroupActive(location, item)
+              : isLeafActive(location, item);
+
+            if (hasSubItems) {
+              return (
+                <SidebarMenuItem key={itemKey}>
+                  <SidebarMenuButton
+                    type="button"
+                    isActive={active}
+                    onClick={() => handleGroupToggle(item)}
+                    className="text-black hover:bg-black/10 hover:text-black data-[active=true]:bg-slate-700 data-[active=true]:text-white justify-between"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </span>
+                    {isOpen ? (
+                      <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />
+                    )}
+                  </SidebarMenuButton>
+
+                  {isOpen && (
+                    <SidebarMenuSub>
+                      {item.subItems?.map((sub) => (
+                        <SidebarMenuSubItem key={sub.href}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isPathActive(location, sub.href)}
+                            className="text-black hover:bg-black/10 hover:text-black data-[active=true]:bg-slate-800 data-[active=true]:text-white"
+                          >
+                            <a
+                              href={sub.href}
+                              onClick={(event) =>
+                                handleNavigate(event, sub.href, itemKey)
+                              }
+                            >
+                              <span>{sub.label}</span>
+                            </a>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  )}
+                </SidebarMenuItem>
+              );
+            }
+
+            return (
+              <SidebarMenuItem key={itemKey}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={active}
+                  className="text-black hover:bg-black/10 hover:text-black data-[active=true]:bg-slate-800 data-[active=true]:text-white"
+                >
+                  <a href={item.href} onClick={(event) => handleNavigate(event, item.href)}>
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </a>
+                </SidebarMenuButton>
+                {item.badge ? (
+                  <SidebarMenuBadge className="text-red-700 font-semibold">
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarContent>
+
+      <SidebarFooter className="p-3">
+        <Button
+          variant="outline"
+          className="w-full justify-start gap-2 text-black border-black/30 hover:bg-black/5"
+          onClick={onLogout}
+        >
+          <LogOut className="h-4 w-4" />
+          Log out
+        </Button>
+      </SidebarFooter>
+    </>
   );
 }

@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Dashboard from "@/pages/dashboard";
 import Inbox from "@/pages/inbox";
 import WindowInbox from "@/pages/inbox/WindowInbox";
@@ -103,6 +105,12 @@ function Router() {
     <Switch>
       <Route path="/login">
         {isAuthenticated ? <Redirect to="/" /> : <Login />}
+      </Route>
+      <Route path="/forgot-password">
+        {isAuthenticated ? <Redirect to="/" /> : <ForgotPassword />}
+      </Route>
+      <Route path="/reset-password">
+        {isAuthenticated ? <Redirect to="/" /> : <ResetPassword />}
       </Route>
       <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
       <Route path="/inbox/window">

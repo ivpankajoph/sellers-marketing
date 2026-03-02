@@ -12,7 +12,10 @@ import {
 import { ensureDefaultAdmin } from "./modules/auth/auth.service";
 import cron from "node-cron";
 import { parallelLimit, retry, syncLeadsForFormMain } from "./worker";
-import { sendTemplateMessage } from "./modules/broadcast/broadcast.service";
+import {
+  sendTemplateMessage,
+  startScheduler as startBroadcastScheduler,
+} from "./modules/broadcast/broadcast.service";
 
 const app = express();
 const httpServer = createServer(app);
@@ -35,29 +38,28 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-/* -------------------- BOOTSTRAP -------------------- */
+/* -------------------- BACKGROUND JOBS -------------------- */
 
-(async () => {
-  await connectToMongoDB();
-  await ensureDefaultAdmin();
-  await registerRoutes(httpServer, app);
+let cronJobsStarted = false;
 
-  /* =====================================================
-     FORM AUTOMATION CRON (NO REDIS)
-     ===================================================== */
+function startMongoCronJobs(): void {
+  if (cronJobsStarted) {
+    return;
+  }
 
+  cronJobsStarted = true;
   let formSyncRunning = false;
 
   cron.schedule("*/40 * * * * *", async () => {
     if (formSyncRunning) {
-      console.log("⏭ Skipping form sync — already running");
+      console.log("[FormSync] Skipping run: previous sync is still in progress");
       return;
     }
 
     formSyncRunning = true;
 
     try {
-      console.log("🔄 Running form automation sync");
+      console.log("[FormSync] Running form automation sync");
 
       const automations = await FormAutomation.find({
         automation_active: true,
@@ -67,32 +69,27 @@ app.use(express.urlencoded({ extended: false }));
         await syncLeadsForFormMain(automation);
       }
 
-      console.log(`✅ Synced ${automations.length} forms`);
+      console.log(`[FormSync] Synced ${automations.length} forms`);
     } catch (err) {
-      console.error("❌ Form sync error:", err);
+      console.error("[FormSync] Error:", err);
     } finally {
       formSyncRunning = false;
     }
   });
 
-  /* =====================================================
-     DRIP CAMPAIGN CRON — NO REDIS, DB LOCKED
-     ===================================================== */
-
   const STUCK_TIMEOUT_MIN = 10;
 
   cron.schedule(
-     "*/12 * * * * *",
+    "*/12 * * * * *",
     async () => {
       const now = new Date();
 
       try {
         console.log(
-          "\n[CRON] 🕒 Drip job @",
+          "\n[CRON] Drip job @",
           now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
         );
 
-        /* ---------- RELEASE STUCK LOCKS ---------- */
         await Campaign.updateMany(
           {
             isProcessing: true,
@@ -103,24 +100,21 @@ app.use(express.urlencoded({ extended: false }));
           { $set: { isProcessing: false } }
         );
 
-        /* ---------- FETCH ELIGIBLE IDS ---------- */
         const campaignIds = await Campaign.find(
           {
             status: "running",
             isProcessing: false,
-            // nextRunAt: { $lte: now },
           },
           { _id: 1 }
         );
-        
+
         if (!campaignIds.length) {
-          console.log("[CRON] ℹ️ No campaigns to process");
+          console.log("[CRON] No campaigns to process");
           return;
         }
 
-        console.log(`[CRON] 📦 Found ${campaignIds.length} campaigns`);
+        console.log(`[CRON] Found ${campaignIds.length} campaigns`);
 
-        /* ---------- PROCESS EACH CAMPAIGN ---------- */
         for (const { _id } of campaignIds) {
           const campaign = await Campaign.findOneAndUpdate(
             { _id, isProcessing: false },
@@ -133,12 +127,12 @@ app.use(express.urlencoded({ extended: false }));
             { new: true }
           );
 
-          if (!campaign) continue; // locked by another instance
+          if (!campaign) continue;
 
           const campaignStart = Date.now();
 
           try {
-            console.log(`[CAMPAIGN] ▶ ${campaign._id}`);
+            console.log(`[CAMPAIGN] Processing ${campaign._id}`);
 
             const step = campaign.steps[campaign.currentStep];
 
@@ -148,7 +142,6 @@ app.use(express.urlencoded({ extended: false }));
               continue;
             }
 
-            /* ---------- SEND MESSAGES ---------- */
             await parallelLimit(campaign.contacts, 5, async (contact: any) => {
               try {
                 const exists = await CampaignLog.findOne({
@@ -158,18 +151,18 @@ app.use(express.urlencoded({ extended: false }));
                 });
 
                 if (exists) return;
-                console.log("contact is",contact,step.template_name)
+                console.log("contact is", contact, step.template_name);
 
-                const templatedetail = await Template.findOne({id:step.templateId})
-                if(!templatedetail){
+                const templatedetail = await Template.findOne({
+                  id: step.templateId,
+                });
+                if (!templatedetail) {
                   throw new Error("Template not found");
                 }
 
                 const template_name = templatedetail.name;
-                await retry(() =>
-                  sendTemplateMessage(contact,template_name)
-                );
-                
+                await retry(() => sendTemplateMessage(contact, template_name));
+
                 await CampaignLog.create({
                   campaignId: campaign._id,
                   stepIndex: campaign.currentStep,
@@ -177,13 +170,12 @@ app.use(express.urlencoded({ extended: false }));
                   sentAt: new Date(),
                 });
 
-                console.log(`[SEND] ✅ ${contact}`);
+                console.log(`[SEND] Sent to ${contact}`);
               } catch (err) {
-                console.error(`[SEND ERROR] ❌`, contact, err);
+                console.error(`[SEND ERROR]`, contact, err);
               }
             });
 
-            /* ---------- NEXT STEP ---------- */
             campaign.currentStep++;
 
             const nextStep = campaign.steps[campaign.currentStep];
@@ -206,27 +198,59 @@ app.use(express.urlencoded({ extended: false }));
               );
             }
           } catch (err) {
-            console.error(
-              `[CAMPAIGN ERROR] ❌ ${campaign._id}`,
-              err
-            );
+            console.error(`[CAMPAIGN ERROR] ${campaign._id}`, err);
           } finally {
             campaign.isProcessing = false;
             await campaign.save();
 
             console.log(
-              `[CAMPAIGN] ⏱ Done ${campaign._id} in ${
+              `[CAMPAIGN] Done ${campaign._id} in ${
                 Date.now() - campaignStart
               }ms`
             );
           }
         }
       } catch (err) {
-        console.error("[CRON] ❌ Fatal drip error:", err);
+        console.error("[CRON] Fatal drip error:", err);
       }
     },
     { timezone: "Asia/Kolkata" }
   );
+
+  console.log("[Cron] Background cron jobs started");
+}
+
+let postListenStartupStarted = false;
+
+async function runPostListenStartupTasks(): Promise<void> {
+  if (postListenStartupStarted) {
+    return;
+  }
+
+  postListenStartupStarted = true;
+  const mongoConfigured = Boolean(process.env.MONGODB_URL);
+
+  if (!mongoConfigured) {
+    console.warn("[Startup] Skipping DB init: MONGODB_URL is not configured");
+    return;
+  }
+
+  try {
+    console.log("[Startup] Initializing database and background jobs...");
+    await connectToMongoDB();
+    await ensureDefaultAdmin();
+    startBroadcastScheduler();
+    startMongoCronJobs();
+    console.log("[Startup] Database and background jobs ready");
+  } catch (err) {
+    console.error("[Startup] Post-listen initialization failed:", err);
+  }
+}
+
+/* -------------------- BOOTSTRAP -------------------- */
+
+(async () => {
+  await registerRoutes(httpServer, app);
 
   /* =====================================================
      ERROR HANDLER
@@ -252,8 +276,40 @@ app.use(express.urlencoded({ extended: false }));
      START SERVER
      ===================================================== */
 
-  const port = parseInt(process.env.PORT || "8080", 10);
-  httpServer.listen({ port, host: "0.0.0.0" }, () => {
-    console.log(`📡 Server running on port ${port}`);
-  });
+  const defaultPort = 8080;
+  const requestedPort = parseInt(process.env.PORT || `${defaultPort}`, 10);
+  const hasExplicitPort = Boolean(process.env.PORT);
+  const bindHost = "0.0.0.0";
+
+  const startServer = (port: number, retries = 0): void => {
+    const onListening = () => {
+      httpServer.off("error", onError);
+      httpServer.off("listening", onListening);
+      console.log(`[Startup] Server running on http://localhost:${port}`);
+      console.log(`[Startup] Bound host ${bindHost}:${port}`);
+      void runPostListenStartupTasks();
+    };
+
+    const onError = (err: NodeJS.ErrnoException) => {
+      httpServer.off("error", onError);
+      httpServer.off("listening", onListening);
+
+      if (!hasExplicitPort && err.code === "EADDRINUSE" && retries < 10) {
+        const nextPort = port + 1;
+        console.warn(`[Server] Port ${port} is in use, trying ${nextPort}`);
+        startServer(nextPort, retries + 1);
+        return;
+      }
+
+      console.error(`[Server] Failed to start on port ${port}:`, err);
+      process.exit(1);
+    };
+
+    httpServer.once("error", onError);
+    httpServer.once("listening", onListening);
+    httpServer.listen({ port, host: bindHost });
+  };
+
+  startServer(requestedPort);
 })();
+

@@ -91,6 +91,56 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.body;
+
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(400).json({ error: 'Email or username is required' });
+    }
+
+    const host = req.get('host');
+    const appUrl = host ? `${req.protocol}://${host}` : 'http://localhost:8080';
+    const result = await authService.requestPasswordReset(identifier, appUrl);
+
+    const response: Record<string, unknown> = {
+      success: true,
+      message:
+        'If an account exists with that email/username, a reset link has been sent.',
+      delivered: result.delivered,
+    };
+
+    if (process.env.NODE_ENV !== 'production' && result.debugResetUrl) {
+      response.debugResetUrl = result.debugResetUrl;
+    }
+
+    res.json(response);
+  } catch (error) {
+    console.error('[Auth] Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process forgot password request' });
+  }
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+
+    const result = await authService.resetPasswordWithToken(token, password);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Failed to reset password' });
+    }
+
+    res.json({ success: true, message: 'Password reset successful' });
+  } catch (error) {
+    console.error('[Auth] Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
 router.post('/logout', (req: Request, res: Response) => {
   res.json({ success: true });
 });

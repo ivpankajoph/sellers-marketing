@@ -1,0 +1,14 @@
+[dotenv@17.2.3] injecting env (25) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+[MongoDB] Connected successfully
+[Auth] Admin credentials already exist in database
+C:\oph work\ophmaarketing\server\static.ts:6
+  const distPath = path.resolve(__dirname, "public");
+                                ^
+
+ReferenceError: __dirname is not defined
+    at serveStatic (C:\oph work\ophmaarketing\server\static.ts:6:33)
+    at <anonymous> (C:\oph work\ophmaarketing\server\index.ts:251:5)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v24.12.0

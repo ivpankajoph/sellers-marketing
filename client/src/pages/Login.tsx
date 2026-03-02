@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, AlertCircle, AtSign, Chrome, Lock } from "lucide-react";
+import { MessageSquare, AlertCircle, AtSign, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login() {
@@ -33,18 +33,6 @@ export default function Login() {
     } catch (err) {
       setError("Login failed. Please try again.");
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const API_URL = "/api";
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      window.location.href = `${API_URL}/auth/google`;
-    } catch (err) {
-      setError("Google sign-in failed");
       setLoading(false);
     }
   };
@@ -96,6 +84,14 @@ export default function Login() {
                   className="pl-10"
                 />
               </div>
+              <div className="flex justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
             </div>
             <Button
               onClick={handleLogin}
@@ -104,30 +100,16 @@ export default function Login() {
             >
               {loading ? "Signing in..." : "Sign In"}
             </Button>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-gray-500">Or continue with</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-            >
-              <Chrome className="mr-2 h-4 w-4" />
-              Sign in with Google
-            </Button>
           </div>
-          <Link href="/register" className="text-emerald-600 hover:underline font-medium">
-            Sign up
-          </Link>
+          <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-center text-sm text-slate-700">
+            New to the platform?{" "}
+            <Link
+              href="/register"
+              className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 hover:text-emerald-800"
+            >
+              Create your account
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

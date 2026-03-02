@@ -103,33 +103,6 @@ function SidebarProvider({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
 
-  // Auto-scroll active items into view whenever the component updates
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      const sidebarContent = document.querySelector(
-        '[data-slot="sidebar-content"]'
-      );
-      if (!sidebarContent) return;
-
-      const activeElement = sidebarContent.querySelector(
-        '[data-active="true"]'
-      ) as HTMLElement | null;
-      if (!activeElement) return;
-
-      const containerRect = sidebarContent.getBoundingClientRect();
-      const activeRect = activeElement.getBoundingClientRect();
-
-      if (
-        activeRect.top < containerRect.top ||
-        activeRect.bottom > containerRect.bottom
-      ) {
-        activeElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  });
-
   const state = open ? "expanded" : "collapsed";
 
   const contextValue = React.useMemo<SidebarContextProps>(

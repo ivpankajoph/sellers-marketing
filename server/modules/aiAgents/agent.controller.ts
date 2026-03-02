@@ -87,6 +87,7 @@ export async function testAgent(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const { message } = req.body;
+    const userId = (req.headers['x-user-id'] as string) || undefined;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -97,7 +98,7 @@ export async function testAgent(req: Request, res: Response) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const response = await generateAgentResponse(message, agent);
+    const response = await generateAgentResponse(message, agent, [], userId);
     res.json({ response });
   } catch (error) {
     console.error('Error testing agent:', error);

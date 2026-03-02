@@ -1,5 +1,22 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { getAuthHeaders } from "@/contexts/AuthContext";
+
+type IntegrationStatus = {
+  hasWhatsApp: boolean;
+  hasOpenAI: boolean;
+  hasGemini: boolean;
+  hasFacebook: boolean;
+  isVerified: boolean;
+};
+
+const DEFAULT_STATUS: IntegrationStatus = {
+  hasWhatsApp: false,
+  hasOpenAI: false,
+  hasGemini: false,
+  hasFacebook: false,
+  isVerified: false,
+};
 
 export default function IntegrationsForm() {
   const [form, setForm] = useState({
@@ -17,33 +34,41 @@ export default function IntegrationsForm() {
     Object.keys(form).reduce((acc, key) => ({ ...acc, [key]: false }), {})
   );
 
-  const [status, setStatus] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<IntegrationStatus>(DEFAULT_STATUS);
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Fetch integration status on mount
-  useEffect(() => {
-    const userDataString = localStorage.getItem("whatsapp_auth_user");
-    if (!userDataString) {
-      alert("User not logged in");
+  const loadStatus = useCallback(async () => {
+    setStatusLoading(true);
+    setStatusError(null);
+
+    try {
+      const res = await fetch("/api/credentials", {
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `Failed to load status (${res.status})`);
+      }
+
+      const data = await res.json();
+      setStatus({ ...DEFAULT_STATUS, ...(data?.status || {}) });
+    } catch (err) {
+      console.error("Failed to fetch status:", err);
+      setStatus(DEFAULT_STATUS);
+      setStatusError("Failed to load integration status.");
+    } finally {
       setStatusLoading(false);
-      return;
     }
-
-    const userData = JSON.parse(userDataString);
-    const userId = userData.id;
-
-    fetch(`/api/integrations/status?userId=${userId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setStatus(data.status || {});
-      })
-      .catch((err) => {
-        console.error("Failed to fetch status:", err);
-        alert("Failed to load integration status.");
-      })
-      .finally(() => setStatusLoading(false));
   }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -57,32 +82,40 @@ export default function IntegrationsForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const userDataString = localStorage.getItem("whatsapp_auth_user");
-    if (!userDataString) {
-      alert("User not logged in");
-      return;
-    }
-
-    const userData = JSON.parse(userDataString);
-    const userId = userData.id;
-
-    if (!userId) {
-      alert("User not logged in");
-      return;
-    }
-
     setLoading(true);
+    setSubmitMessage(null);
+    setSubmitError(null);
+
+    const payload = {
+      openaiApiKey: form.OPENAI_API_KEY.trim() || undefined,
+      geminiApiKey: form.GEMINI_API_KEY.trim() || undefined,
+      facebookPageId: form.FB_PAGE_ID.trim() || undefined,
+      facebookAccessToken: form.FB_PAGE_ACCESS_TOKEN.trim() || undefined,
+      phoneNumberId: form.PHONE_NUMBER_ID.trim() || undefined,
+      webhookVerifyToken: form.WHATSAPP_WEBHOOK_VERIFY_TOKEN.trim() || undefined,
+      businessAccountId: form.WABA_ID.trim() || undefined,
+      whatsappToken: form.SYSTEM_USER_TOKEN_META.trim() || undefined,
+    };
+
+    const hasAtLeastOneField = Object.values(payload).some(Boolean);
+    if (!hasAtLeastOneField) {
+      setSubmitError("Please enter at least one key before saving.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch("/api/integrations/save", {
+      const res = await fetch("/api/credentials", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...getAuthHeaders(),
         },
-        body: JSON.stringify({ userId, ...form }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
-        alert("Keys saved securely!");
+        setSubmitMessage("Keys saved securely.");
         setForm({
           OPENAI_API_KEY: "",
           GEMINI_API_KEY: "",
@@ -93,14 +126,15 @@ export default function IntegrationsForm() {
           WABA_ID: "",
           SYSTEM_USER_TOKEN_META: "",
         });
+        await loadStatus();
       } else {
-        const error = await res.text();
-        console.error("Save failed:", error);
-        alert("Failed to save keys. Please try again.");
+        const errorText = await res.text();
+        console.error("Save failed:", errorText);
+        setSubmitError("Failed to save keys. Please try again.");
       }
     } catch (err) {
       console.error("Network error:", err);
-      alert("Network error. Please check your connection.");
+      setSubmitError("Network error. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -234,6 +268,25 @@ export default function IntegrationsForm() {
   const whatsappFields = Object.keys(form).filter(
     (key) => fieldInfo[key as keyof typeof fieldInfo].group === "WHATSAPP"
   );
+  const statusItems = [
+    { key: "hasOpenAI", label: "OpenAI API Key", value: status.hasOpenAI },
+    { key: "hasGemini", label: "Gemini API Key", value: status.hasGemini },
+    {
+      key: "hasFacebook",
+      label: "Facebook Integration",
+      value: status.hasFacebook,
+    },
+    {
+      key: "hasWhatsApp",
+      label: "WhatsApp Integration",
+      value: status.hasWhatsApp,
+    },
+    {
+      key: "isVerified",
+      label: "Connection Verified",
+      value: status.isVerified,
+    },
+  ];
 
   return (
     <DashboardLayout>
@@ -254,9 +307,9 @@ export default function IntegrationsForm() {
           </h2>
           {statusLoading ? (
             <p className="text-gray-500">Loading status...</p>
-          ) : Object.keys(status).length > 0 ? (
+          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {Object.entries(status).map(([key, value]) => (
+              {statusItems.map(({ key, label, value }) => (
                 <div key={key} className="flex items-center text-sm">
                   <span
                     className={`mr-2 h-2 w-2 rounded-full ${
@@ -264,7 +317,7 @@ export default function IntegrationsForm() {
                     }`}
                   ></span>
                   <span className="text-gray-700">
-                    {fieldInfo[key as keyof typeof fieldInfo]?.label || key}:{" "}
+                    {label}:{" "}
                     <span
                       className={
                         value
@@ -278,8 +331,9 @@ export default function IntegrationsForm() {
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="text-gray-500">No integrations configured yet.</p>
+          )}
+          {statusError && (
+            <p className="mt-3 text-sm text-red-600">{statusError}</p>
           )}
         </div>
 
@@ -309,6 +363,17 @@ export default function IntegrationsForm() {
         {/* Form */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
           <form onSubmit={handleSubmit}>
+            {submitMessage && (
+              <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                {submitMessage}
+              </div>
+            )}
+            {submitError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {submitError}
+              </div>
+            )}
+
             {/* AI Section */}
             <div className="mb-8">
               <h3 className="text-lg font-medium text-gray-800 mb-4 pb-2 border-b border-gray-200">

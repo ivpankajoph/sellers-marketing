@@ -1,457 +1,449 @@
-import { useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, AlertCircle, User, Mail, Phone, Lock, Chrome, Check, X, ChevronDown } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  MessageSquare,
+  Phone,
+  ShieldCheck,
+  Sparkles,
+  User,
+} from "lucide-react";
+import { toast } from "sonner";
 
-const countries = [
-    { code: "91", flag: "🇮🇳", name: "India" },
-    { code: "1", flag: "🇺🇸", name: "USA" },
-    { code: "44", flag: "🇬🇧", name: "UK" },
-    { code: "86", flag: "🇨🇳", name: "China" },
-    { code: "81", flag: "🇯🇵", name: "Japan" },
-    { code: "49", flag: "🇩🇪", name: "Germany" },
-    { code: "33", flag: "🇫🇷", name: "France" },
-    { code: "61", flag: "🇦🇺", name: "Australia" },
-    { code: "7", flag: "🇷🇺", name: "Russia" },
-    { code: "55", flag: "🇧🇷", name: "Brazil" },
-    { code: "27", flag: "🇿🇦", name: "South Africa" },
-    { code: "82", flag: "🇰🇷", name: "South Korea" },
-    { code: "34", flag: "🇪🇸", name: "Spain" },
-    { code: "39", flag: "🇮🇹", name: "Italy" },
-    { code: "31", flag: "🇳🇱", name: "Netherlands" },
+type CountryOption = {
+  iso2: string;
+  dialCode: string;
+  name: string;
+};
+
+const countries: CountryOption[] = [
+  { iso2: "in", dialCode: "+91", name: "India" },
+  { iso2: "us", dialCode: "+1", name: "United States" },
+  { iso2: "gb", dialCode: "+44", name: "United Kingdom" },
+  { iso2: "ae", dialCode: "+971", name: "United Arab Emirates" },
+  { iso2: "sg", dialCode: "+65", name: "Singapore" },
+  { iso2: "au", dialCode: "+61", name: "Australia" },
+  { iso2: "de", dialCode: "+49", name: "Germany" },
+  { iso2: "fr", dialCode: "+33", name: "France" },
+  { iso2: "it", dialCode: "+39", name: "Italy" },
+  { iso2: "br", dialCode: "+55", name: "Brazil" },
 ];
 
+const passwordRules = {
+  minLength: {
+    label: "At least 6 characters",
+    test: (value: string) => value.length >= 6,
+  },
+  uppercase: {
+    label: "One uppercase letter",
+    test: (value: string) => /[A-Z]/.test(value),
+  },
+  lowercase: {
+    label: "One lowercase letter",
+    test: (value: string) => /[a-z]/.test(value),
+  },
+  number: {
+    label: "One number",
+    test: (value: string) => /[0-9]/.test(value),
+  },
+};
+
+function getFlagUrl(iso2: string): string {
+  return `https://flagcdn.com/w40/${iso2}.png`;
+}
+
 export default function Register() {
-    const [name, setName] = useState("");
-    const [email, setEmail] = useState("");
-    const [countryCode, setCountryCode] = useState("91");
-    const [phone, setPhone] = useState("");
-    const [password, setPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [otp, setOtp] = useState("");
-    const [otpSent, setOtpSent] = useState(false);
-    const [otpVerified, setOtpVerified] = useState(false);
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [showCountryDropdown, setShowCountryDropdown] = useState(false);
-    const [, setLocation] = useLocation();
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [countryIso, setCountryIso] = useState("in");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-    const API_URL = "/api";
+  const { register } = useAuth();
+  const [, setLocation] = useLocation();
 
-    const passwordValidation = {
-        minLength: password.length >= 6,
-        hasUpperCase: /[A-Z]/.test(password),
-        hasLowerCase: /[a-z]/.test(password),
-        hasNumber: /[0-9]/.test(password),
-        hasSpecialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password),
-    };
+  const selectedCountry = useMemo(
+    () => countries.find((country) => country.iso2 === countryIso) ?? countries[0],
+    [countryIso]
+  );
 
-    const passwordsMatch = password === confirmPassword && confirmPassword !== "";
+  const passwordChecks = useMemo(
+    () =>
+      Object.entries(passwordRules).map(([key, rule]) => ({
+        key,
+        label: rule.label,
+        passed: rule.test(password),
+      })),
+    [password]
+  );
 
-    const getPasswordStrength = () => {
-        const validCount = Object.values(passwordValidation).filter(Boolean).length;
-        if (validCount <= 2) return { text: "Weak", color: "text-red-600", bg: "bg-red-500" };
-        if (validCount <= 3) return { text: "Medium", color: "text-yellow-600", bg: "bg-yellow-500" };
-        return { text: "Strong", color: "text-green-600", bg: "bg-green-500" };
-    };
+  const matchedPassword = confirmPassword.length > 0 && password === confirmPassword;
+  const score = passwordChecks.filter((check) => check.passed).length;
+  const strength =
+    score <= 1
+      ? { label: "Weak", bar: "33%", color: "text-rose-600", bg: "bg-rose-500" }
+      : score <= 3
+        ? { label: "Medium", bar: "66%", color: "text-amber-600", bg: "bg-amber-500" }
+        : { label: "Strong", bar: "100%", color: "text-emerald-600", bg: "bg-emerald-500" };
 
-    const passwordStrength = getPasswordStrength();
+  const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
 
-    const sendOTP = async () => {
-        const fullPhone = `${countryCode}${phone}`;
-        
-        if (!phone || phone.length < 10) {
-            setError("Please enter a valid phone number");
-            return;
-        }
+    const cleanName = name.trim();
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim();
 
-        setLoading(true);
-        setError("");
+    if (!cleanName || !cleanUsername || !password) {
+      setError("Name, username, and password are required.");
+      return;
+    }
 
-        try {
-            const response = await fetch(`${API_URL}/auth/send-otp`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone: fullPhone }),
-            });
+    if (passwordChecks.some((check) => !check.passed)) {
+      setError("Please set a stronger password that meets all requirements.");
+      return;
+    }
 
-            const data = await response.json();
+    if (!matchedPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
 
-            if (response.ok) {
-                setOtpSent(true);
-                alert("OTP sent to your WhatsApp!");
-            } else {
-                setError(data.message || "Failed to send OTP");
-            }
-        } catch (err) {
-            setError("Failed to send OTP. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
+    setLoading(true);
 
-    const verifyOTP = async () => {
-        const fullPhone = `${countryCode}${phone}`;
-        
-        if (!otp || otp.length !== 6) {
-            setError("Please enter a valid 6-digit OTP");
-            return;
-        }
+    try {
+      const result = await register(
+        cleanUsername,
+        password,
+        cleanName,
+        cleanEmail || undefined
+      );
 
-        setLoading(true);
-        setError("");
+      if (!result.success) {
+        setError(result.error || "Unable to create account.");
+        return;
+      }
 
-        try {
-            const response = await fetch(`${API_URL}/auth/verify-otp`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone: fullPhone, otp }),
-            });
+      toast.success("Account created successfully");
+      setLocation("/");
+    } catch (registerError) {
+      setError("Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            const data = await response.json();
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_15%,#d1fae5_0%,#f5faf9_35%,#ecfdf5_70%,#e6f4ef_100%)]">
+      <div className="pointer-events-none absolute -left-28 top-24 h-72 w-72 rounded-full bg-emerald-300/25 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 top-10 h-80 w-80 rounded-full bg-teal-300/20 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-lime-300/20 blur-3xl" />
 
-            if (response.ok) {
-                setOtpVerified(true);
-                alert("Phone number verified!");
-            } else {
-                setError(data.message || "Invalid OTP");
-            }
-        } catch (err) {
-            setError("OTP verification failed. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl items-center justify-center p-4 sm:p-6 lg:p-10">
+        <div className="grid w-full overflow-hidden rounded-3xl border border-white/70 bg-white/85 shadow-[0_30px_80px_-32px_rgba(8,47,38,0.45)] backdrop-blur lg:grid-cols-[1.05fr_1fr]">
+          <aside className="hidden border-r border-emerald-100/70 bg-[linear-gradient(160deg,#073d2f_0%,#0b5d47_46%,#0f766e_100%)] p-9 text-white lg:flex lg:flex-col">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100">
+              <Sparkles className="h-3.5 w-3.5" />
+              Premium Onboarding
+            </div>
+            <h1 className="mt-6 text-4xl font-black leading-tight tracking-tight font-heading">
+              Build your WhatsApp growth engine.
+            </h1>
+            <p className="mt-4 max-w-md text-emerald-100/90">
+              Create your workspace in under a minute and launch campaigns, automations,
+              and analytics from one polished dashboard.
+            </p>
+            <div className="mt-10 space-y-4">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+                <p className="text-sm text-emerald-100/90">
+                  Smart contact targeting, template campaigns, and AI-powered responses.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-200" />
+                  <p className="text-sm text-emerald-100/90">
+                    Enterprise-grade account security and granular role management.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <p className="mt-auto text-xs tracking-[0.2em] text-emerald-100/70 uppercase">
+              WhatsApp Business API Suite
+            </p>
+          </aside>
 
-    const handleGoogleLogin = async () => {
-        setLoading(true);
-        try {
-            window.location.href = `${API_URL}/auth/google`;
-        } catch (err) {
-            setError("Google sign-in failed");
-            setLoading(false);
-        }
-    };
+          <section className="p-5 sm:p-8 lg:p-10">
+            <div className="mb-8 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/35">
+                <MessageSquare className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-emerald-700/80">
+                  Create account
+                </p>
+                <h2 className="text-2xl font-black text-slate-900 font-heading">Sign Up</h2>
+              </div>
+            </div>
 
-    const handleRegister = async () => {
-        setError("");
+            <form className="space-y-4" onSubmit={handleRegister}>
+              {error && (
+                <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{error}</span>
+                </div>
+              )}
 
-        if (!otpVerified) {
-            setError("Please verify your phone number first");
-            return;
-        }
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="register-name" className="text-slate-700">
+                    Full Name
+                  </Label>
+                  <div className="relative">
+                    <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="register-name"
+                      type="text"
+                      placeholder="Jane Smith"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      className="h-11 rounded-xl border-slate-200 pl-10 focus-visible:ring-emerald-500"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-username" className="text-slate-700">
+                    Username
+                  </Label>
+                  <div className="relative">
+                    <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="register-username"
+                      type="text"
+                      placeholder="janesmith"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      className="h-11 rounded-xl border-slate-200 pl-10 focus-visible:ring-emerald-500"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
 
-        if (!passwordValidation.minLength) {
-            setError("Password must be at least 6 characters");
-            return;
-        }
+              <div className="space-y-2">
+                <Label htmlFor="register-email" className="text-slate-700">
+                  Email (optional)
+                </Label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="register-email"
+                    type="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    className="h-11 rounded-xl border-slate-200 pl-10 focus-visible:ring-emerald-500"
+                  />
+                </div>
+              </div>
 
-        if (!passwordsMatch) {
-            setError("Passwords do not match");
-            return;
-        }
+              <div className="space-y-2">
+                <Label htmlFor="register-phone" className="text-slate-700">
+                  WhatsApp Number (optional)
+                </Label>
+                <div className="relative flex gap-2">
+                  <button
+                    type="button"
+                    className="flex h-11 min-w-36 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50/50"
+                    onClick={() => setShowCountryDropdown((open) => !open)}
+                    aria-expanded={showCountryDropdown}
+                  >
+                    <img
+                      src={getFlagUrl(selectedCountry.iso2)}
+                      alt={`${selectedCountry.name} flag`}
+                      className="h-4 w-6 rounded-sm object-cover shadow-sm"
+                    />
+                    <span className="text-sm font-semibold">{selectedCountry.dialCode}</span>
+                    <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-500" />
+                  </button>
+                  <div className="relative flex-1">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id="register-phone"
+                      type="tel"
+                      placeholder="9876543210"
+                      value={phone}
+                      onChange={(event) => setPhone(event.target.value.replace(/\D/g, ""))}
+                      className="h-11 rounded-xl border-slate-200 pl-10 focus-visible:ring-emerald-500"
+                    />
+                  </div>
 
-        setLoading(true);
-
-        try {
-            const fullPhone = `${countryCode}${phone}`;
-            const response = await fetch(`${API_URL}/auth/register`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, email, password, phone: fullPhone }),
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                alert("Account created successfully!");
-                setLocation("/");
-            } else {
-                setError(data.message || "Registration failed");
-            }
-        } catch (err) {
-            setError("Registration failed. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const selectedCountry = countries.find(c => c.code === countryCode);
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4">
-            <Card className="w-full max-w-md shadow-xl border-0">
-                <CardHeader className="text-center space-y-4 pb-2">
-                    <div className="mx-auto w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
-                        <MessageSquare className="h-8 w-8 text-white" />
-                    </div>
-                    <div>
-                        <CardTitle className="text-2xl font-bold text-gray-900">WhatsApp Business API</CardTitle>
-                        <CardDescription className="text-gray-500 mt-1">Create your account</CardDescription>
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                    <div className="space-y-4">
-                        {error && (
-                            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                                <AlertCircle className="h-4 w-4" />
-                                {error}
-                            </div>
-                        )}
-                        <div className="space-y-2">
-                            <Label htmlFor="register-name" className="text-gray-700">Full Name</Label>
-                            <div className="relative">
-                                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                    id="register-name"
-                                    type="text"
-                                    placeholder="Your name"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="pl-10"
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="register-email" className="text-gray-700">Email</Label>
-                            <div className="relative">
-                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                    id="register-email"
-                                    type="email"
-                                    placeholder="you@example.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    className="pl-10"
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="register-phone" className="text-gray-700">Phone Number</Label>
-                            <div className="relative flex gap-2">
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                                        className="h-10 px-3 flex items-center gap-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        disabled={otpVerified}
-                                    >
-                                        <span className="text-2xl leading-none">{selectedCountry?.flag}</span>
-                                        <span className="text-sm font-medium">+{countryCode}</span>
-                                        <ChevronDown className="h-3 w-3 text-gray-400" />
-                                    </button>
-                                    {showCountryDropdown && !otpVerified && (
-                                        <>
-                                            <div 
-                                                className="fixed inset-0 z-10" 
-                                                onClick={() => setShowCountryDropdown(false)}
-                                            />
-                                            <div className="absolute top-full mt-1 w-72 bg-white border border-gray-300 rounded-md shadow-lg z-20 max-h-60 overflow-y-auto">
-                                                {countries.map((country) => (
-                                                    <button
-                                                        key={country.code}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setCountryCode(country.code);
-                                                            setShowCountryDropdown(false);
-                                                        }}
-                                                        className="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-gray-100 text-left transition-colors"
-                                                    >
-                                                        <span className="text-2xl leading-none">{country.flag}</span>
-                                                        <span className="text-sm flex-1">{country.name}</span>
-                                                        <span className="text-sm text-gray-600 font-medium">+{country.code}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                                <div className="relative flex-1">
-                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                    <Input
-                                        id="register-phone"
-                                        type="tel"
-                                        placeholder="1234567890"
-                                        value={phone}
-                                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                                        className="pl-10"
-                                        disabled={otpVerified}
-                                    />
-                                </div>
-                            </div>
-                            {!otpSent && !otpVerified && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={sendOTP}
-                                    disabled={loading}
-                                    className="w-full mt-2"
-                                >
-                                    Send OTP
-                                </Button>
-                            )}
-                        </div>
-
-                        {otpSent && !otpVerified && (
-                            <div className="space-y-2">
-                                <Label htmlFor="otp" className="text-gray-700">Enter OTP</Label>
-                                <Input
-                                    id="otp"
-                                    type="text"
-                                    placeholder="6-digit code"
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                                    maxLength={6}
-                                />
-                                <div className="flex gap-2">
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={verifyOTP}
-                                        disabled={loading}
-                                        className="flex-1"
-                                    >
-                                        Verify OTP
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={sendOTP}
-                                        disabled={loading}
-                                        className="flex-1"
-                                    >
-                                        Resend
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-
-                        {otpVerified && (
-                            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
-                                <Check className="h-4 w-4" />
-                                <span className="font-medium">Phone verified</span>
-                            </div>
-                        )}
-
-                        <div className="space-y-2">
-                            <Label htmlFor="register-password" className="text-gray-700">Password</Label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                    id="register-password"
-                                    type="password"
-                                    placeholder="Create a strong password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="pl-10"
-                                />
-                            </div>
-                            
-                            {password && (
-                                <div className="space-y-2 mt-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-600">Password strength:</span>
-                                        <span className={`text-xs font-semibold ${passwordStrength.color}`}>
-                                            {passwordStrength.text}
-                                        </span>
-                                    </div>
-                                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                        <div 
-                                            className={`h-full ${passwordStrength.bg} transition-all duration-300`}
-                                            style={{ 
-                                                width: `${(Object.values(passwordValidation).filter(Boolean).length / 5) * 100}%` 
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="space-y-1 pt-1">
-                                        <div className={`flex items-center gap-2 text-xs ${passwordValidation.minLength ? 'text-green-600' : 'text-gray-500'}`}>
-                                            {passwordValidation.minLength ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                            <span>At least 6 characters</span>
-                                        </div>
-                                        <div className={`flex items-center gap-2 text-xs ${passwordValidation.hasUpperCase ? 'text-green-600' : 'text-gray-500'}`}>
-                                            {passwordValidation.hasUpperCase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                            <span>One uppercase letter</span>
-                                        </div>
-                                        <div className={`flex items-center gap-2 text-xs ${passwordValidation.hasLowerCase ? 'text-green-600' : 'text-gray-500'}`}>
-                                            {passwordValidation.hasLowerCase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                            <span>One lowercase letter</span>
-                                        </div>
-                                        <div className={`flex items-center gap-2 text-xs ${passwordValidation.hasNumber ? 'text-green-600' : 'text-gray-500'}`}>
-                                            {passwordValidation.hasNumber ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                            <span>One number</span>
-                                        </div>
-                                        <div className={`flex items-center gap-2 text-xs ${passwordValidation.hasSpecialChar ? 'text-green-600' : 'text-gray-500'}`}>
-                                            {passwordValidation.hasSpecialChar ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                            <span>One special character</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="confirm-password" className="text-gray-700">Confirm Password</Label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                    id="confirm-password"
-                                    type="password"
-                                    placeholder="Re-enter your password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="pl-10"
-                                />
-                            </div>
-                            {confirmPassword && (
-                                <div className={`flex items-center gap-2 text-xs ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
-                                    {passwordsMatch ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                    <span>{passwordsMatch ? 'Passwords match' : 'Passwords do not match'}</span>
-                                </div>
-                            )}
-                        </div>
-                        
-                        <Button
-                            onClick={handleRegister}
-                            className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
-                            disabled={loading || !otpVerified || !passwordsMatch}
-                        >
-                            {loading ? "Creating account..." : "Create Account"}
-                        </Button>
-
-                        <div className="relative my-6">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t border-gray-200" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-white px-2 text-gray-500">Or continue with</span>
-                            </div>
-                        </div>
-
-                        <Button
+                  {showCountryDropdown && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowCountryDropdown(false)}
+                      />
+                      <div className="absolute left-0 top-12 z-20 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+                        {countries.map((country) => (
+                          <button
                             type="button"
-                            variant="outline"
-                            className="w-full"
-                            onClick={handleGoogleLogin}
-                            disabled={loading}
-                        >
-                            <Chrome className="mr-2 h-4 w-4" />
-                            Sign up with Google
-                        </Button>
+                            key={country.iso2}
+                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-emerald-50"
+                            onClick={() => {
+                              setCountryIso(country.iso2);
+                              setShowCountryDropdown(false);
+                            }}
+                          >
+                            <img
+                              src={getFlagUrl(country.iso2)}
+                              alt={`${country.name} flag`}
+                              className="h-4 w-6 rounded-sm object-cover shadow-sm"
+                            />
+                            <span className="flex-1 text-slate-700">{country.name}</span>
+                            <span className="font-medium text-slate-500">{country.dialCode}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
 
-                        <div className="text-center text-sm text-gray-600 mt-4">
-                            Already have an account?{" "}
-                            <Link href="/login" className="text-emerald-600 hover:underline font-medium">
-                                Sign in
-                            </Link>
-                        </div>
+              <div className="space-y-2">
+                <Label htmlFor="register-password" className="text-slate-700">
+                  Password
+                </Label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="register-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Create a strong password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="h-11 rounded-xl border-slate-200 px-10 focus-visible:ring-emerald-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+
+                {password.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <div className="mb-2 flex items-center justify-between text-xs">
+                      <span className="font-medium text-slate-500">Password strength</span>
+                      <span className={`font-semibold ${strength.color}`}>{strength.label}</span>
                     </div>
-                </CardContent>
-            </Card>
+                    <div className="mb-3 h-1.5 rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full transition-all ${strength.bg}`}
+                        style={{ width: strength.bar }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-2">
+                      {passwordChecks.map((check) => (
+                        <div
+                          key={check.key}
+                          className={`inline-flex items-center gap-1.5 ${
+                            check.passed ? "text-emerald-700" : "text-slate-500"
+                          }`}
+                        >
+                          <CheckCircle2
+                            className={`h-3.5 w-3.5 ${check.passed ? "opacity-100" : "opacity-35"}`}
+                          />
+                          <span>{check.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password" className="text-slate-700">
+                  Confirm Password
+                </Label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Re-enter password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className="h-11 rounded-xl border-slate-200 px-10 focus-visible:ring-emerald-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600"
+                    onClick={() => setShowConfirmPassword((visible) => !visible)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                {confirmPassword.length > 0 && (
+                  <p
+                    className={`text-xs ${matchedPassword ? "text-emerald-700" : "text-rose-600"}`}
+                  >
+                    {matchedPassword ? "Passwords match" : "Passwords do not match"}
+                  </p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                className="h-11 w-full rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 text-base font-semibold shadow-lg shadow-emerald-500/30 hover:from-emerald-700 hover:to-teal-600"
+                disabled={loading}
+              >
+                {loading ? "Creating account..." : "Create Account"}
+              </Button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-slate-600">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="font-semibold text-emerald-700 transition hover:text-emerald-800 hover:underline"
+              >
+                Sign in
+              </Link>
+            </p>
+          </section>
         </div>
-    );
+      </div>
+    </div>
+  );
 }

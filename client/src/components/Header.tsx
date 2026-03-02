@@ -1,35 +1,24 @@
 // src/components/layout/Header.tsx
 import { useAuth } from "@/contexts/AuthContext";
 
-import { Bell, LogOut, Menu, Search, Settings, Users } from "lucide-react";
-import { useLocation } from "wouter";
+import { Bell, LogOut, Search, Settings, Users } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { SidebarTrigger } from "./ui/sidebar";
 
 interface HeaderProps {
-  isSidebarOpen: boolean;
-  onToggleSidebar: () => void;
   onLogout: () => void;
 }
 
-export default function Header({ isSidebarOpen, onToggleSidebar, onLogout }: HeaderProps) {
+export default function Header({ onLogout }: HeaderProps) {
   const { user } = useAuth();
-  const [location] = useLocation();
 
   return (
     <header className="h-16 border-b border-border bg-background px-6 flex items-center justify-between shrink-0 sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={onToggleSidebar}
-          aria-label="Toggle sidebar"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        <SidebarTrigger className="md:hidden" />
 
         <div className="relative hidden sm:block w-96">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-black" />

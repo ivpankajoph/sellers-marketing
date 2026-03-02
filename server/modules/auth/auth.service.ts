@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { User, UserCredentials } from '../storage/mongodb.adapter';
 import { SystemUser } from '../users/user.model';
+import { sendPasswordResetLinkEmail } from '../email/email.service';
 
 export interface AuthUser {
   id: string;
@@ -9,6 +10,12 @@ export interface AuthUser {
   email?: string;
   role: string;
   pageAccess?: string[];
+}
+
+const PASSWORD_RESET_TTL_MINUTES = 15;
+
+function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 export function hashPassword(password: string): string {
@@ -173,7 +180,99 @@ export async function validateLogin(username: string, password: string): Promise
   }
 }
 
+export async function requestPasswordReset(
+  identifier: string,
+  appUrl: string
+): Promise<{ delivered: boolean; debugResetUrl?: string }> {
+  try {
+    const cleanIdentifier = identifier.trim();
+    if (!cleanIdentifier) {
+      return { delivered: false };
+    }
+
+    const user = await User.findOne({
+      $or: [{ username: cleanIdentifier }, { email: cleanIdentifier }],
+    });
+
+    if (!user) {
+      return { delivered: false };
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = hashResetToken(resetToken);
+    const resetTokenExpiresAt = new Date(
+      Date.now() + PASSWORD_RESET_TTL_MINUTES * 60 * 1000
+    );
+
+    user.resetPasswordTokenHash = resetTokenHash;
+    user.resetPasswordExpiresAt = resetTokenExpiresAt;
+    await user.save();
+
+    const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+    let delivered = false;
+
+    if (user.email) {
+      delivered = await sendPasswordResetLinkEmail(
+        user.email,
+        user.name || user.username,
+        resetUrl,
+        PASSWORD_RESET_TTL_MINUTES
+      );
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      return { delivered, debugResetUrl: resetUrl };
+    }
+
+    return { delivered };
+  } catch (error) {
+    console.error('[Auth] Error requesting password reset:', error);
+    return { delivered: false };
+  }
+}
+
+export async function resetPasswordWithToken(
+  token: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      return { success: false, error: 'Invalid reset token' };
+    }
+
+    if (newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters' };
+    }
+
+    const tokenHash = hashResetToken(cleanToken);
+    const user = await User.findOne({
+      resetPasswordTokenHash: tokenHash,
+      resetPasswordExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return { success: false, error: 'Reset token is invalid or has expired' };
+    }
+
+    user.password = hashPassword(newPassword);
+    user.resetPasswordTokenHash = null;
+    user.resetPasswordExpiresAt = null;
+    await user.save();
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Auth] Error resetting password:', error);
+    return { success: false, error: 'Failed to reset password' };
+  }
+}
+
 export async function ensureDefaultAdmin(): Promise<void> {
+  if (!process.env.MONGODB_URL) {
+    console.warn('[Auth] Skipping default admin setup: MONGODB_URL is not configured');
+    return;
+  }
+
   try {
     const adminExists = await User.findOne({ username: 'admin@whatsapp.com' });
     if (!adminExists) {

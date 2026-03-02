@@ -505,6 +505,8 @@ const UserSchema = new Schema(
     password: { type: String, required: true },
     name: { type: String, required: true },
     email: { type: String },
+    resetPasswordTokenHash: { type: String, default: null },
+    resetPasswordExpiresAt: { type: Date, default: null },
     role: { type: String, default: "user" },
     createdAt: { type: String, required: true },
   },

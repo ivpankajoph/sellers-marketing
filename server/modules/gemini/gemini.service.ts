@@ -1,7 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { credentialsService } from '../credentials/credentials.service';
 
-const SYSTEM_GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const SYSTEM_GOOGLE_API_KEY = process.env.GOOGLE_API_KEY?.trim();
+const SYSTEM_GEMINI_API_KEY = process.env.GEMINI_API_KEY?.trim();
+let loggedDualKeyWarning = false;
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -21,15 +23,27 @@ async function getGeminiApiKey(userId?: string): Promise<string | null> {
   if (userId) {
     try {
       const creds = await credentialsService.getDecryptedCredentials(userId);
-      if (creds?.geminiApiKey) {
-        return creds.geminiApiKey;
+      if (creds?.geminiApiKey?.trim()) {
+        return creds.geminiApiKey.trim();
       }
     } catch (error) {
       console.error('[Gemini Service] Error getting user API key:', error);
     }
   }
-  
-  return SYSTEM_GEMINI_API_KEY || null;
+
+  if (
+    SYSTEM_GOOGLE_API_KEY &&
+    SYSTEM_GEMINI_API_KEY &&
+    SYSTEM_GOOGLE_API_KEY !== SYSTEM_GEMINI_API_KEY &&
+    !loggedDualKeyWarning
+  ) {
+    loggedDualKeyWarning = true;
+    console.warn(
+      "[Gemini Service] Both GOOGLE_API_KEY and GEMINI_API_KEY are set with different values. Preferring GOOGLE_API_KEY."
+    );
+  }
+
+  return SYSTEM_GOOGLE_API_KEY || SYSTEM_GEMINI_API_KEY || null;
 }
 
 function mapModelName(model: string): string {
@@ -103,6 +117,16 @@ export async function sendGeminiCompletion(
     
     return responseText;
   } catch (error) {
+    console.error("[Gemini Debug] userId:", userId || "(system)");
+    console.error("[Gemini Debug] selected apiKey:", apiKey);
+    console.error(
+      "[Gemini Debug] env GEMINI_API_KEY:",
+      process.env.GEMINI_API_KEY || "(empty)"
+    );
+    console.error(
+      "[Gemini Debug] env GOOGLE_API_KEY:",
+      process.env.GOOGLE_API_KEY || "(empty)"
+    );
     console.error('Gemini API error:', error);
     throw error;
   }
