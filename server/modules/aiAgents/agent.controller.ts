@@ -78,7 +78,7 @@ export async function deleteAgent(req: Request, res: Response) {
 
     res.json({ success: true, message: 'Agent deleted successfully' });
   } catch (error) {
-    console.error('Error deleting agent:', error);
+    console.error('Errors deleting agent:', error);
     res.status(500).json({ error: 'Failed to delete agent' });
   }
 }
