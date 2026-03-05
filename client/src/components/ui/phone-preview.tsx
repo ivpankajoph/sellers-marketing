@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { FileText, Link2, PhoneCall, Play } from "lucide-react";
 
 interface ButtonType {
   type: "quick_reply" | "url" | "phone_number";
@@ -9,6 +10,7 @@ interface PhonePreviewProps {
   headerType?: string;
   headerText?: string;
   headerImage?: string;
+  headerMediaName?: string;
   body: string;
   footer?: string;
   buttons?: ButtonType[];
@@ -19,6 +21,7 @@ export function PhonePreview({
   headerType,
   headerText,
   headerImage,
+  headerMediaName,
   body,
   footer,
   buttons,
@@ -57,6 +60,33 @@ export function PhonePreview({
                     className="w-full h-32 object-cover"
                   />
                 )}
+                {headerType === "video" && headerImage && (
+                  <div className="relative">
+                    <video
+                      src={headerImage}
+                      className="w-full h-32 object-cover bg-black"
+                      muted
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/60">
+                        <Play className="h-5 w-5 text-white" />
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {headerType === "document" && (
+                  <div className="flex items-center gap-2 border-b border-gray-600 bg-[#0f3d35] p-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded bg-white/10">
+                      <FileText className="h-4 w-4 text-white" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-medium text-white">
+                        {headerMediaName || "Document"}
+                      </p>
+                      <p className="text-[10px] text-gray-300">Tap to view</p>
+                    </div>
+                  </div>
+                )}
                 {headerType === "image" && !headerImage && (
                   <div className="w-full h-32 bg-gray-700 flex items-center justify-center">
                     <svg className="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,13 +114,19 @@ export function PhonePreview({
                   {buttons && buttons.length > 0 && (
                     <div className="mt-2 flex flex-col gap-1">
                       {buttons.map((btn, idx) => (
-                        <button
+                        <div
                           key={idx}
-                          disabled
-                          className="text-xs bg-gray-700 text-white rounded px-2 py-1 max-w-full truncate text-left disabled:opacity-80"
+                          className="inline-flex items-center gap-1 rounded bg-gray-700 px-2 py-1 text-xs text-white"
                         >
-                          {btn.text}
-                        </button>
+                          {btn.type === "url" && <Link2 className="h-3 w-3" />}
+                          {btn.type === "phone_number" && (
+                            <PhoneCall className="h-3 w-3" />
+                          )}
+                          {btn.type === "quick_reply" && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-white/70" />
+                          )}
+                          <span className="truncate">{btn.text}</span>
+                        </div>
                       ))}
                     </div>
                   )}

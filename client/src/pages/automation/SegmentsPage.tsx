@@ -48,10 +48,15 @@ export default function SegmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newSegment, setNewSegment] = useState({ 
+  const [newSegment, setNewSegment] = useState<{
+    name: string;
+    description: string;
+    type: "dynamic" | "static";
+    refreshStrategy: string;
+  }>({ 
     name: "", 
     description: "",
-    type: "dynamic" as const,
+    type: "dynamic",
     refreshStrategy: "hourly"
   });
 

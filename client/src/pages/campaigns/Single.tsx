@@ -77,14 +77,23 @@ export default function Single() {
       }
       return res.json();
     },
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       if (result.success) {
+        const requestedPhone = String(variables?.phone || "");
+        const acceptedPhone = String(result?.phone_number || requestedPhone);
+        const messageId = result?.messageId ? `\nMessage ID: ${result.messageId}` : "";
+        const mismatch = Boolean(
+          requestedPhone &&
+            acceptedPhone &&
+            requestedPhone.replace(/\D/g, "") !== acceptedPhone.replace(/\D/g, "")
+        );
+
         Swal.fire({
-          icon: "success",
-          title: "Message sent!",
-          text: "Your message was delivered successfully.",
-          timer: 2000,
-          showConfirmButton: false,
+          icon: mismatch ? "warning" : "success",
+          title: mismatch ? "Sent to different number" : "Message accepted",
+          text: mismatch
+            ? `Requested: ${requestedPhone}\nSent to: ${acceptedPhone}${messageId}\n\nPlease verify the number/country code.`
+            : `Queued to WhatsApp for ${acceptedPhone}.${messageId}\n\nAccepted does not always mean delivered.`,
         });
         handleClearForm();
       } else {
@@ -141,8 +150,22 @@ export default function Single() {
       return;
     }
 
-    // Combine country code (without +) and phone number
-    const fullPhoneNumber = countryCode + phone.replace(/\D/g, ""); // remove non-digits for safety
+    // Build E.164-ish number safely and avoid double country-code prefixing
+    const phoneDigits = phone.replace(/\D/g, "");
+    let normalizedDigits = phoneDigits;
+    if (normalizedDigits.startsWith("00")) {
+      normalizedDigits = normalizedDigits.slice(2);
+    }
+
+    const fullPhoneNumber =
+      normalizedDigits.startsWith(countryCode) && normalizedDigits.length > 10
+        ? normalizedDigits
+        : `${countryCode}${normalizedDigits.startsWith("0") ? normalizedDigits.slice(1) : normalizedDigits}`;
+
+    if (fullPhoneNumber.length < 8 || fullPhoneNumber.length > 15) {
+      Swal.fire("Error", "Please enter a valid WhatsApp number", "error");
+      return;
+    }
 
     sendMessageMutation.mutate({
       phone: fullPhoneNumber, // e.g., "919876543210"

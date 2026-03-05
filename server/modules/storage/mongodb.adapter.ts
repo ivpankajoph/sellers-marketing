@@ -365,10 +365,17 @@ const CampaignSchema = new mongoose.Schema(
   {
     id: { type: String, unique: true },
     name: String,
+    campaign_name: String,
+    form_id: String,
+    form_name: String,
+    is_active: {
+      type: Boolean,
+      default: true,
+    },
 
     status: {
       type: String,
-      enum: ["running", "completed", "paused"],
+      enum: ["draft", "running", "completed", "paused"],
       default: "running",
     },
 
@@ -398,8 +405,21 @@ const CampaignLogSchema = new mongoose.Schema(
   {
     campaignId: mongoose.Schema.Types.ObjectId,
     stepIndex: Number,
-    contact: Object,
+    contact: String,
+    templateName: String,
+    messageId: String,
+    attemptCount: { type: Number, default: 0 },
+    status: {
+      type: String,
+      enum: ["pending", "accepted", "delivered", "read", "failed"],
+      default: "pending",
+    },
+    providerStatus: String,
+    error: String,
     sentAt: Date,
+    deliveredAt: Date,
+    readAt: Date,
+    failedAt: Date,
   },
   { timestamps: true }
 );
@@ -454,11 +474,23 @@ const TemplateSchema = new Schema(
       enum: ["MARKETING", "UTILITY", "AUTHENTICATION","marketing", "utility", "authentication"],
       required: true,
     },
+    templateType: {
+      type: String,
+      enum: [
+        "default",
+        "catalogue",
+        "flows",
+        "order_details",
+        "calling_permission",
+        "one_time_password",
+      ],
+      default: "default",
+    },
     language: { type: String, default: "en" },
 
     headerType: {
       type: String,
-      enum: ["text", "image", null],
+      enum: ["text", "image", "video", "document", null],
       default: null,
     },
     headerText: String,
@@ -638,6 +670,34 @@ const UserCredentialsSchema = new Schema(
     updatedAt: { type: String, required: true },
   },
   { collection: "user_credentials" }
+);
+
+const WebhookStatusEventSchema = new Schema(
+  {
+    id: { type: String, required: true, unique: true },
+    messageId: { type: String, index: true },
+    recipientId: { type: String, index: true },
+    status: { type: String, required: true, index: true },
+    statusTimestamp: { type: Date, required: true, index: true },
+    webhookReceivedAt: { type: Date, required: true, default: Date.now },
+    phoneNumberId: { type: String, index: true },
+    wabaId: { type: String },
+    conversationId: { type: String },
+    pricingCategory: { type: String },
+    errorCode: { type: String },
+    errorTitle: { type: String },
+    errorMessage: { type: String },
+    errorDetails: { type: String },
+    rawStatus: { type: Schema.Types.Mixed, default: {} },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+  },
+  { collection: "webhook_status_events" }
+);
+
+WebhookStatusEventSchema.index(
+  { messageId: 1, status: 1, statusTimestamp: 1, recipientId: 1 },
+  { unique: true, sparse: true }
 );
 
 const ContactAnalyticsSchema = new Schema(
@@ -964,6 +1024,9 @@ export const BlockedContact =
 export const UserCredentials =
   mongoose.models.UserCredentials ||
   mongoose.model("UserCredentials", UserCredentialsSchema);
+export const WebhookStatusEvent =
+  mongoose.models.WebhookStatusEvent ||
+  mongoose.model("WebhookStatusEvent", WebhookStatusEventSchema);
 export const ContactAnalytics =
   mongoose.models.ContactAnalytics ||
   mongoose.model("ContactAnalytics", ContactAnalyticsSchema);
@@ -1006,6 +1069,7 @@ const modelMap: Record<string, Model<any>> = {
   scheduled_broadcasts: ScheduledBroadcast,
   blocked_contacts: BlockedContact,
   user_credentials: UserCredentials,
+  webhook_status_events: WebhookStatusEvent,
   contact_analytics: ContactAnalytics,
   lead_assignments: LeadAssignment,
   team_hierarchy: TeamHierarchy,

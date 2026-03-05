@@ -55,13 +55,13 @@ export interface ScheduledBroadcast {
 }
 
 export interface SendMessageResult {
-  error_code: unknown;
-  template_name: any;
-  template_name: unknown;
-  phone_number: unknown;
   success: boolean;
   messageId?: string;
   error?: string;
+  error_code?: number | string | null;
+  template_name?: string | null;
+  phone_number?: string | null;
+  provider_status?: string | null;
 }
 
 function getWhatsAppCredentials(): {
@@ -209,104 +209,250 @@ export async function deleteScheduledMessage(id: string): Promise<boolean> {
   return mongodb.deleteOne("scheduled_messages", { id });
 }
 
-// export async function sendTemplateMessage(phone: string, templateName: string, contactName?: string): Promise<SendMessageResult> {
-//   const components: templateService.TemplateComponent[] = [];
+interface StoredTemplateRecord {
+  id?: string;
+  name: string;
+  language?: string;
+  headerType?: string;
+  headerText?: string;
+  headerImageUrl?: string;
+  previewUrl?: string;
+  content?: string;
+  buttons?: Array<{ type?: string; url?: string }>;
+}
 
-//   if (templateName.includes('awards') || templateName.includes('marketing')) {
-//     components.push({
-//       type: 'body',
-//       parameters: [
-//         {
-//           type: 'text',
-//           text: contactName || 'Valued Customer',
-//           parameter_name: 'name',
-//         }
-//       ]
-//     });
-//   }
+function isHttpUrl(value?: string | null): boolean {
+  return Boolean(value && /^https?:\/\//i.test(value));
+}
 
-//   const result = await templateService.sendTemplateMessage(formatPhoneNumber(phone), {
-//     name: templateName,
-//     languageCode: 'en',
-//     components: components.length > 0 ? components : undefined,
-//   });
-//   return result;
-// }
+function extractPlaceholderTokens(text?: string): string[] {
+  if (!text) return [];
+
+  const matches = [...text.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)];
+  const tokens: string[] = [];
+
+  for (const match of matches) {
+    const token = (match[1] || "").trim();
+    if (!token) continue;
+    tokens.push(token);
+  }
+
+  return tokens;
+}
+
+function resolveTemplateValue(
+  token: string,
+  index: number,
+  values: { name?: string; phone?: string; email?: string }
+): string {
+  const fallbackName = values.name?.trim() || 'Customer';
+  const fallbackPhone = values.phone?.trim() || fallbackName;
+  const fallbackEmail = values.email?.trim() || fallbackName;
+
+  if (/^\d+$/.test(token)) {
+    const position = Number(token);
+    if (position === 1) return fallbackName;
+    if (position === 2) return fallbackPhone;
+    if (position === 3) return fallbackEmail;
+    return fallbackName;
+  }
+
+  const lowered = token.toLowerCase();
+  if (lowered.includes('name')) return fallbackName;
+  if (lowered.includes('phone') || lowered.includes('mobile')) return fallbackPhone;
+  if (lowered.includes('email')) return fallbackEmail;
+
+  if (index === 1) return fallbackName;
+  if (index === 2) return fallbackPhone;
+  if (index === 3) return fallbackEmail;
+  return fallbackName;
+}
+
+function buildTextParameters(
+  text: string | undefined,
+  values: { name?: string; phone?: string; email?: string }
+): templateService.TemplateParameter[] {
+  const tokens = extractPlaceholderTokens(text);
+
+  return tokens.map((token, index) => ({
+    type: "text",
+    text: resolveTemplateValue(token, index + 1, values),
+  }));
+}
+
+function buildTemplateComponents(
+  templateRecord: StoredTemplateRecord | null,
+  values: { name?: string; phone?: string; email?: string }
+): templateService.TemplateComponent[] {
+  if (!templateRecord) return [];
+
+  const components: templateService.TemplateComponent[] = [];
+  const headerType = String(templateRecord.headerType || "").toLowerCase();
+
+  if (headerType === "image" || headerType === "video" || headerType === "document") {
+    const mediaLink = isHttpUrl(templateRecord.previewUrl)
+      ? templateRecord.previewUrl
+      : isHttpUrl(templateRecord.headerImageUrl)
+        ? templateRecord.headerImageUrl
+        : undefined;
+
+    if (mediaLink) {
+      const mediaParameter: templateService.TemplateParameter =
+        headerType === "video"
+          ? { type: "video", video: { link: mediaLink } }
+          : headerType === "document"
+            ? {
+                type: "document",
+                document: { link: mediaLink, filename: "template-header" },
+              }
+            : { type: "image", image: { link: mediaLink } };
+
+      components.push({
+        type: "header",
+        parameters: [mediaParameter],
+      });
+    }
+  }
+
+  const headerParameters = buildTextParameters(templateRecord.headerText, values);
+  if (headerType !== "image" && headerType !== "video" && headerType !== "document" && headerParameters.length > 0) {
+    components.push({ type: "header", parameters: headerParameters });
+  }
+
+  const bodyParameters = buildTextParameters(templateRecord.content, values);
+  if (bodyParameters.length > 0) {
+    components.push({ type: "body", parameters: bodyParameters });
+  }
+
+  templateRecord.buttons?.forEach((button, index) => {
+    if (button?.type !== "url") return;
+
+    const buttonParameters = buildTextParameters(button.url, values);
+    if (buttonParameters.length === 0) return;
+
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: String(index),
+      parameters: buttonParameters,
+    });
+  });
+
+  return components;
+}
+
+function withSendMetadata(
+  result: {
+    success: boolean;
+    error?: string;
+    messageId?: string;
+    messageStatus?: string;
+  },
+  templateName: string,
+  phone: string
+): SendMessageResult {
+  return {
+    success: result.success,
+    messageId: result.messageId,
+    error: result.error,
+    error_code: result.success ? null : 'template_send_failed',
+    template_name: templateName,
+    phone_number: phone,
+    provider_status: result.messageStatus || null,
+  };
+}
 
 export async function sendTemplateMessage(
   phone: string,
   templateName: string,
-  contactName?: string
+  contactName?: string,
+  options?: { allowLanguageFallback?: boolean }
 ): Promise<SendMessageResult> {
   const formattedPhone = formatPhoneNumber(phone);
+  const normalizedTemplateName = templateName.toLowerCase().replace(/\s+/g, '_');
 
-  // 🔹 ATTEMPT 1: Try without components first
+  const templateRecord = (await mongodb.Template.findOne({
+    $or: [
+      { id: templateName },
+      { id: normalizedTemplateName },
+      { name: templateName },
+      { name: normalizedTemplateName },
+    ],
+  }).lean()) as StoredTemplateRecord | null;
+
+  const resolvedTemplateName = templateRecord?.name || templateName;
+  const languageCode = templateRecord?.language || 'en_US';
+  const normalizedHeaderType = String(templateRecord?.headerType || "").toLowerCase();
+  const allowLanguageFallback = options?.allowLanguageFallback !== false;
+
+  if (
+    (normalizedHeaderType === "image" ||
+      normalizedHeaderType === "video" ||
+      normalizedHeaderType === "document") &&
+    !isHttpUrl(templateRecord?.previewUrl) &&
+    !isHttpUrl(templateRecord?.headerImageUrl)
+  ) {
+    return withSendMetadata(
+      {
+        success: false,
+        error:
+          "Template has media header but no usable media URL. Configure Cloudinary and re-upload header media in Templates.",
+      },
+      resolvedTemplateName,
+      formattedPhone
+    );
+  }
+
+  const components = buildTemplateComponents(templateRecord, {
+    name: contactName,
+    phone: formattedPhone,
+  });
+
   console.log(
-    `[SendTemplate] Attempting "${templateName}" without variables...`
+    `[SendTemplate] Sending "${resolvedTemplateName}" with ${components.length} component(s)`
   );
 
   let result = await templateService.sendTemplateMessage(formattedPhone, {
-    name: templateName,
-    languageCode: "en",
-    components: undefined,
-  });
+    name: resolvedTemplateName,
+    languageCode,
+    components: components.length > 0 ? components : undefined,
+  }, { allowLanguageFallback });
 
-  // ✅ Success! Template doesn't need variables
-  if (result.success) {
-    console.log(`[SendTemplate] ✅ Success without variables`);
-    return result;
-  }
+  const parameterMismatch = Boolean(
+    result.error &&
+      /132000|132012|parameter format does not match|parameters does not match|localizable_params|expected number of params/i.test(
+        result.error
+      )
+  );
 
-  // 🔍 Check if error is about missing parameters
-  const needsParameters =
-    result.error?.includes("132000") ||
-    result.error?.includes("Number of parameters does not match") ||
-    result.error?.includes("localizable_params");
+  if (!result.success && parameterMismatch && components.length === 0) {
+    const expectedMatch = result.error?.match(/expected number of params\s*\((\d+)\)/i);
+    const parsedCount = expectedMatch ? Number(expectedMatch[1]) : 1;
+    const safeCount = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 1;
 
-  if (needsParameters) {
-    // 🔹 ATTEMPT 2: Retry with a parameter
+    const fallbackComponents: templateService.TemplateComponent[] = [
+      {
+        type: 'body',
+        parameters: Array.from({ length: safeCount }, () => ({
+          type: 'text',
+          text: contactName || 'Customer',
+        })),
+      },
+    ];
+
     console.log(
-      `[SendTemplate] Template needs variables, retrying with parameter...`
+      `[SendTemplate] Retrying "${resolvedTemplateName}" with ${safeCount} fallback parameter(s)`
     );
-
-    const parameterValue = contactName || "User";
 
     result = await templateService.sendTemplateMessage(formattedPhone, {
-      name: templateName,
-      languageCode: "en",
-      components: [
-        {
-          type: "body",
-          parameters: [
-            {
-              type: "text",
-              text: parameterValue,
-            },
-          ],
-        },
-      ],
-    });
-
-    if (result.success) {
-      console.log(
-        `[SendTemplate] ✅ Success with variable: "${parameterValue}"`
-      );
-    } else {
-      console.error(
-        `[SendTemplate] ❌ Failed even with variable:`,
-        result.error
-      );
-    }
-  } else {
-    console.error(
-      `[SendTemplate] ❌ Failed with different error:`,
-      result.error
-    );
+      name: resolvedTemplateName,
+      languageCode,
+      components: fallbackComponents,
+    }, { allowLanguageFallback });
   }
 
-  return result;
+  return withSendMetadata(result, resolvedTemplateName, formattedPhone);
 }
-
 export async function sendCustomMessage(
   phone: string,
   message: string
@@ -696,7 +842,7 @@ export async function sendBroadcast(
       try {
         if (!contact.phone) {
           console.warn("[Broadcast] No phone number, skipping inbox save");
-          return;
+          continue;
         }
 
         const contactdetail = await mongodb.Contact.findOne({
@@ -707,7 +853,7 @@ export async function sendBroadcast(
           console.warn("[Broadcast] Contact not found in DB", {
             phone: contact.phone,
           });
-          return;
+          continue;
         }
 
         await storage.createMessage({
@@ -1250,3 +1396,4 @@ export async function deleteScheduledBroadcast(id: string): Promise<boolean> {
     return false;
   }
 }
+

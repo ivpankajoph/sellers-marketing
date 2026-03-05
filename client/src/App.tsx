@@ -21,6 +21,7 @@ import Permissions from "@/pages/settings/Permissions";
 import WhatsAppNumber from "@/pages/settings/WhatsAppNumber";
 import ProfileDetails from "@/pages/settings/ProfileDetails";
 import WebhookAPI from "@/pages/settings/WebhookAPI";
+import WebhookEvents from "@/pages/settings/WebhookEvents";
 import Billing from "@/pages/settings/Billing";
 
 import Templates from "@/pages/templates";
@@ -310,6 +311,9 @@ function Router() {
       </Route>
       <Route path="/settings/api">
         {() => <ProtectedRoute component={WebhookAPI} />}
+      </Route>
+      <Route path="/settings/webhook-events">
+        {() => <ProtectedRoute component={WebhookEvents} />}
       </Route>
       <Route path="/settings/billing">
         {() => <ProtectedRoute component={Billing} />}

@@ -851,6 +851,8 @@ export async function retry(fn: () => Promise<any>, retries = 3) {
 
 export function buildMetaTemplate(template: any) {
   const components: any[] = [];
+  const mediaHandle =
+    template.headerImageUrl || template.headerMedia || template.headerImage;
 
   /* ---------------- HEADER ---------------- */
   if (template.headerType === "text" && template.headerText) {
@@ -864,12 +866,32 @@ export function buildMetaTemplate(template: any) {
     });
   }
 
-  if (template.headerType === "image" && template.headerImageUrl) {
+  if (template.headerType === "image" && mediaHandle) {
     components.push({
       type: "HEADER",
       format: "IMAGE",
       example: {
-        header_handle: [template.headerImageUrl],
+        header_handle: [mediaHandle],
+      },
+    });
+  }
+
+  if (template.headerType === "video" && mediaHandle) {
+    components.push({
+      type: "HEADER",
+      format: "VIDEO",
+      example: {
+        header_handle: [mediaHandle],
+      },
+    });
+  }
+
+  if (template.headerType === "document" && mediaHandle) {
+    components.push({
+      type: "HEADER",
+      format: "DOCUMENT",
+      example: {
+        header_handle: [mediaHandle],
       },
     });
   }
@@ -967,17 +989,22 @@ export function validateMetaTemplate(template: any) {
     }
   });
 
-  if (template.headerType === "image" && !template.headerImageUrl) {
-    errors.push("Image header requires a public HTTPS image URL");
+  if (
+    ["image", "video", "document"].includes(template.headerType) &&
+    !template.headerImageUrl &&
+    !template.headerMedia &&
+    !template.headerImage
+  ) {
+    errors.push("Selected header media type requires uploaded media handle");
   }
 
   return errors;
 }
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD!,
-  api_key: process.env.CLOUDINARY_KEY!,
-  api_secret: process.env.CLOUDINARY_SECRET!,
+  cloud_name: process.env.CLOUDINARY_CLOUD || process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_KEY || process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_SECRET || process.env.CLOUDINARY_API_SECRET!,
 });
 
 export async function uploadHeaderImage(base64: string): Promise<string> {

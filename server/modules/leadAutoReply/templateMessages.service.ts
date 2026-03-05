@@ -22,6 +22,48 @@ export interface TemplateParameter {
   document?: { link: string; filename: string };
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidTemplateParameter(
+  param: TemplateParameter | null | undefined
+): boolean {
+  if (!param || typeof param !== "object") return false;
+
+  const type = String(param.type || "").toLowerCase();
+
+  if (!type) {
+    // Backward compatibility for legacy payloads that omitted type.
+    return isNonEmptyString(param.text);
+  }
+
+  switch (type) {
+    case "text":
+      return isNonEmptyString(param.text);
+    case "image":
+      return isNonEmptyString(param.image?.link);
+    case "video":
+      return isNonEmptyString(param.video?.link);
+    case "document":
+      return isNonEmptyString(param.document?.link);
+    case "currency": {
+      const amount = param.currency?.amount_1000;
+      return (
+        isNonEmptyString(param.currency?.fallback_value) &&
+        isNonEmptyString(param.currency?.code) &&
+        typeof amount === "number" &&
+        Number.isFinite(amount)
+      );
+    }
+    case "date_time":
+      return isNonEmptyString(param.date_time?.fallback_value);
+    default:
+      // Unknown types should be validated by Meta API, not blocked locally.
+      return true;
+  }
+}
+
 function getWhatsAppCredentials(): {
   token: string;
   phoneNumberId: string;
@@ -350,8 +392,14 @@ function getWhatsAppCredentials(): {
 
 export async function sendTemplateMessage(
   to: string,
-  template: TemplateConfig
-): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  template: TemplateConfig,
+  options?: { allowLanguageFallback?: boolean }
+): Promise<{
+  success: boolean;
+  error?: string;
+  messageId?: string;
+  messageStatus?: string;
+}> {
   console.log("[TemplateMessage] ===== START =====");
   console.log("[TemplateMessage] To:", to);
   console.log(
@@ -369,12 +417,17 @@ export async function sendTemplateMessage(
   // Meta requires lowercase + underscores
   const metaTemplateName = template.name.toLowerCase().replace(/\s+/g, "_");
 
-  const languageCodesToTry = Array.from(
-    new Set([template.languageCode, "en", "en_US", "en_GB"].filter(Boolean))
-  );
+  const primaryLanguage = template.languageCode || "en_US";
+  const allowLanguageFallback = options?.allowLanguageFallback !== false;
+  const languageCodesToTry = allowLanguageFallback
+    ? Array.from(new Set([primaryLanguage, "en_US", "en", "en_GB"]))
+    : [primaryLanguage];
 
   console.log("[TemplateMessage] Normalized template name:", metaTemplateName);
-  console.log("[TemplateMessage] Language fallback order:", languageCodesToTry);
+  console.log(
+    "[TemplateMessage] Language attempt order:",
+    languageCodesToTry
+  );
 
   for (const langCode of languageCodesToTry) {
     console.log("--------------------------------------------");
@@ -399,12 +452,7 @@ export async function sendTemplateMessage(
         for (const component of template.components) {
           if (component.parameters) {
             for (const param of component.parameters) {
-              if (
-                !param ||
-                param.text === undefined ||
-                param.text === null ||
-                param.text === ""
-              ) {
+              if (!isValidTemplateParameter(param)) {
                 console.error(
                   "[TemplateMessage] ❌ Invalid template parameter:",
                   param
@@ -468,7 +516,11 @@ export async function sendTemplateMessage(
           `[TemplateMessage] ✅ Success | Message ID: ${data.messages[0].id}`
         );
         console.log("[TemplateMessage] ===== END =====");
-        return { success: true, messageId: data.messages[0].id };
+        return {
+          success: true,
+          messageId: data.messages[0].id,
+          messageStatus: data.messages?.[0]?.message_status,
+        };
       }
 
       const errorMsg = data?.error?.message || "Unknown Meta error";
@@ -489,7 +541,12 @@ export async function sendTemplateMessage(
       }
 
       // Parameter mismatch - this is a real error, don't retry
-      if (errorCode === 132000 || errorMsg.toLowerCase().includes("parameters does not match")) {
+      if (
+        errorCode === 132000 ||
+        errorCode === 132012 ||
+        errorMsg.toLowerCase().includes("parameters does not match") ||
+        errorMsg.toLowerCase().includes("parameter format does not match")
+      ) {
         console.error("[TemplateMessage] ❌ Parameter mismatch - check template variables");
         return { 
           success: false, 
@@ -560,3 +617,4 @@ export async function getAvailableTemplates(): Promise<{
     };
   }
 }
+

@@ -214,18 +214,22 @@ export async function executeCampaign(userId: string, campaignId: string): Promi
 
 export async function updateCampaignContactStatus(
   messageId: string, 
-  status: 'delivered' | 'read',
-  timestamp?: Date
+  status: 'delivered' | 'read' | 'failed',
+  timestamp?: Date,
+  failureReason?: string
 ): Promise<boolean> {
-  const updateField = status === 'delivered' ? 'deliveredAt' : 'readAt';
-  const metricsField = status === 'delivered' ? 'metrics.delivered' : 'metrics.read';
+  const updateField =
+    status === 'delivered' ? 'deliveredAt' : status === 'read' ? 'readAt' : 'failedAt';
+  const metricsField =
+    status === 'delivered' ? 'metrics.delivered' : status === 'read' ? 'metrics.read' : 'metrics.failed';
 
   const result = await Campaign.updateOne(
     { 'contacts.messageId': messageId, [`contacts.${updateField}`]: { $exists: false } },
     { 
       $set: { 
         [`contacts.$.status`]: status,
-        [`contacts.$.${updateField}`]: timestamp || new Date()
+        [`contacts.$.${updateField}`]: timestamp || new Date(),
+        ...(status === 'failed' && failureReason ? { 'contacts.$.error': failureReason } : {})
       },
       $inc: { [metricsField]: 1 }
     }

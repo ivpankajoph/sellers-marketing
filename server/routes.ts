@@ -32,6 +32,7 @@ import * as openaiService from "./modules/openai/openai.service";
 import * as aiService from "./modules/ai/ai.service";
 import * as templateService from "./modules/leadAutoReply/templateMessages.service";
 import * as mongodb from "./modules/storage/mongodb.adapter";
+import * as broadcastService from "./modules/broadcast/broadcast.service";
 import * as contactAgentService from "./modules/contactAgent/contactAgent.service";
 import * as leadManagementService from "./modules/leadManagement/leadManagement.service";
 import flowHandler from "./modules/facebook/fb.routes.ts";
@@ -81,42 +82,151 @@ async function submitMetaTemplate(templatePayload: any) {
 
 import { v2 as cloudinaryV2 } from "cloudinary";
 
-// Configure Cloudinary (do this once in your app, e.g., in server.ts or config)
-cloudinaryV2.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+const cloudinaryConfig = {
+  cloud_name:
+    process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD || "",
+  api_key: process.env.CLOUDINARY_API_KEY || process.env.CLOUDINARY_KEY || "",
+  api_secret:
+    process.env.CLOUDINARY_API_SECRET || process.env.CLOUDINARY_SECRET || "",
+};
+
+const hasCloudinaryConfig = Boolean(
+  cloudinaryConfig.cloud_name &&
+    cloudinaryConfig.api_key &&
+    cloudinaryConfig.api_secret
+);
+
+if (hasCloudinaryConfig) {
+  cloudinaryV2.config(cloudinaryConfig);
+} else {
+  console.warn(
+    "[TemplateMediaUpload] Cloudinary env is missing. Media preview URL will not be generated."
+  );
+}
+
+async function resolveTemplateMediaUploadCredentials(req: Request) {
+  let accessToken =
+    process.env.FB_PAGE_ACCESS_TOKEN ||
+    process.env.SYSTEM_USER_TOKEN_META ||
+    process.env.FB_ACCESS_TOKEN ||
+    "";
+  let appId =
+    process.env.META_APP_ID ||
+    process.env.FACEBOOK_APP_ID ||
+    process.env.APP_ID ||
+    "";
+
+  const headerUserIdRaw = req.headers["x-user-id"];
+  const headerUserId =
+    typeof headerUserIdRaw === "string"
+      ? headerUserIdRaw
+      : Array.isArray(headerUserIdRaw)
+        ? headerUserIdRaw[0]
+        : undefined;
+  const queryUserId =
+    typeof req.query?.userId === "string" ? req.query.userId : undefined;
+  const bodyUserId =
+    req.body && typeof req.body.userId === "string"
+      ? req.body.userId
+      : undefined;
+  const sessionUserId =
+    (req as any)?.session?.userId || (req as any)?.session?.user?.id;
+  const userId = headerUserId || sessionUserId || queryUserId || bodyUserId;
+
+  if (userId) {
+    try {
+      const credentials = await mongodb.UserCredentials.findOne({
+        userId,
+      }).lean();
+
+      if (!accessToken && credentials?.whatsappToken) {
+        accessToken = String(credentials.whatsappToken);
+      }
+
+      if (!appId && credentials?.appId) {
+        appId = String(credentials.appId);
+      }
+    } catch (error) {
+      console.warn(
+        "[TemplateMediaUpload] Could not resolve user credentials:",
+        error
+      );
+    }
+  }
+
+  return {
+    accessToken: accessToken.trim(),
+    appId: appId.trim(),
+    userId,
+  };
+}
 
 export const uploadTemplateHeader = async (req: Request, res: Response) => {
-  console.log("🔥 uploadTemplateHeader() called");
+  console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ uploadTemplateHeader() called");
 
   try {
     const file = req.file;
 
-    console.log("📁 Incoming file info:", {
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Incoming file info:", {
       exists: !!file,
       originalname: file?.originalname,
       mimetype: file?.mimetype,
       size: file?.size,
     });
 
-    if (!file) {
-      console.error("❌ No file uploaded");
+        if (!file) {
+      console.error("No file uploaded");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const accessToken = process.env.FB_PAGE_ACCESS_TOKEN;
-    const appId = process.env.META_APP_ID;
+    const getMediaType = (mimeType: string) => {
+      if (mimeType.startsWith("image/")) return "image";
+      if (mimeType.startsWith("video/")) return "video";
+      if (
+        [
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "text/plain",
+        ].includes(mimeType)
+      ) {
+        return "document";
+      }
+      return null;
+    };
 
-    console.log("🔐 Environment values:", {
+    const mediaType = getMediaType(file.mimetype);
+    if (!mediaType) {
+      return res.status(400).json({
+        error:
+          "Unsupported file type. Allowed: image, video, PDF, DOC, DOCX, TXT.",
+      });
+    }
+
+    const {
+      accessToken,
+      appId,
+      userId,
+    } = await resolveTemplateMediaUploadCredentials(req);
+
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Environment values:", {
       appId,
       hasAccessToken: !!accessToken,
     });
 
     if (!accessToken || !appId) {
-      console.error("❌ Missing Meta credentials");
-      return res.status(500).json({ error: "Missing Meta credentials" });
+      const missing: string[] = [];
+      if (!accessToken) missing.push("access token");
+      if (!appId) missing.push("Meta App ID");
+
+      console.error("[TemplateMediaUpload] Missing Meta credentials", {
+        missing,
+        userId: userId || null,
+      });
+      return res.status(500).json({
+        error: `Missing Meta credentials: ${missing.join(", ")}`,
+        hint: "Configure credentials in Settings (WhatsApp token + App ID) or set FB_PAGE_ACCESS_TOKEN/SYSTEM_USER_TOKEN_META and META_APP_ID/FACEBOOK_APP_ID.",
+      });
     }
 
     const fileName = file.originalname;
@@ -124,32 +234,49 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
     const fileType = file.mimetype;
 
     // === Step A: Upload to Cloudinary for preview ===
-    console.log("☁️ Uploading to Cloudinary for preview…");
-    const cloudinaryResult = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinaryV2.uploader.upload_stream(
-        {
-          folder: "whatsapp/template-headers",
-          public_id: fileName.replace(/\.[^/.]+$/, ""), // strip extension
-          resource_type: "image",
-          overwrite: false,
-        },
-        (error, result) => {
-          if (error) {
-            console.error("❌ Cloudinary upload error:", error);
-            reject(error);
-          } else {
-            resolve(result);
-          }
-        }
-      );
-      uploadStream.end(file.buffer);
-    });
+    let previewUrl: string | null = null;
+    if (hasCloudinaryConfig) {
+      try {
+        console.log("Uploading to Cloudinary for preview...");
+        const cloudinaryResult = await new Promise((resolve, reject) => {
+          const uploadStream = cloudinaryV2.uploader.upload_stream(
+            {
+              folder: "whatsapp/template-media",
+              public_id: `${Date.now()}_${fileName.replace(/\.[^/.]+$/, "")}`,
+              resource_type:
+                mediaType === "image"
+                  ? "image"
+                  : mediaType === "video"
+                    ? "video"
+                    : "raw",
+              overwrite: false,
+            },
+            (error, result) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+          uploadStream.end(file.buffer);
+        });
 
-    const previewUrl = (cloudinaryResult as any).secure_url;
-    console.log("✅ Cloudinary preview URL:", previewUrl);
+        previewUrl = (cloudinaryResult as any).secure_url || null;
+      } catch (cloudinaryErr) {
+        console.warn("Cloudinary preview upload failed:", cloudinaryErr);
+      }
+    }
+
+    if (!previewUrl) {
+      return res.status(500).json({
+        error: "Header media uploaded but preview URL could not be generated.",
+        hint: "Configure Cloudinary keys (CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/CLOUDINARY_API_SECRET) and re-upload media.",
+      });
+    }
 
     // === Step B: Upload to Meta (as before) ===
-    console.log("⏳ Step 1: Creating Meta upload session…");
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ Step 1: Creating Meta upload sessionÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦");
 
     const sessionRes = await axios.post(
       `https://graph.facebook.com/v24.0/${appId}/uploads`,
@@ -164,12 +291,12 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
       }
     );
 
-    console.log("✅ Meta upload session response:", sessionRes.data);
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Meta upload session response:", sessionRes.data);
 
     const uploadId = sessionRes.data.id;
-    console.log("📌 Meta uploadId:", uploadId);
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Meta uploadId:", uploadId);
 
-    console.log("⏳ Step 2: Uploading binary to Meta…");
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ Step 2: Uploading binary to MetaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦");
 
     const uploadRes = await axios.post(
       `https://graph.facebook.com/v24.0/${uploadId}`,
@@ -185,31 +312,32 @@ export const uploadTemplateHeader = async (req: Request, res: Response) => {
       }
     );
 
-    console.log("✅ Meta binary upload response:", uploadRes.data);
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Meta binary upload response:", uploadRes.data);
 
     const handle = uploadRes.data.h;
-    console.log("🎯 Final Meta media handle:", handle);
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ Final Meta media handle:", handle);
 
-    console.log("🚀 Upload complete, responding to client");
+    console.log("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ Upload complete, responding to client");
 
     return res.json({
       success: true,
-      handle,               // ← Send to Meta when creating template
-      previewUrl,           // ← Public URL for UI preview
+      handle,
+      previewUrl,
+      mediaType,
     });
   } catch (err: any) {
-    console.error("💥 Upload failed");
+    console.error("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ Upload failed");
 
     if (err?.response) {
-      console.error("📨 Axios response error:", {
+      console.error("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ Axios response error:", {
         status: err.response.status,
         data: err.response.data,
         headers: err.response.headers,
       });
     } else if (err?.request) {
-      console.error("📭 Axios request error (no response):", err.request);
+      console.error("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ Axios request error (no response):", err.request);
     } else {
-      console.error("⚠️ General error message:", err.message);
+      console.error("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â General error message:", err.message);
     }
 
     return res.status(500).json({
@@ -234,6 +362,19 @@ export async function registerRoutes(
 
   app.post(
     "/api/upload/template-header",
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        await uploadTemplateHeader(req, res);
+      } catch (err) {
+        console.error("[Route Error]", err);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/upload/template-media",
     upload.single("file"),
     async (req, res) => {
       try {
@@ -332,36 +473,246 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/drip-campaigns", async (req, res) => {
-    const { name, contacts, steps } = req.body;
+  const normalizeCampaignStep = (step: any, index: number) => {
+    const templateId = step?.templateId || step?.template_id;
+    if (!templateId) return null;
 
-    const normalizedContacts = contacts
-      .map((c: any) => {
-        if (typeof c === "string") return c;
-        if (typeof c === "object" && c.Phone) {
-          return String(c.Phone);
-        }
-        return null;
-      })
-      .filter(Boolean);
+    const scheduleType: "delay" | "specific" =
+      step?.scheduleType === "specific" ? "specific" : "delay";
 
-    if (normalizedContacts.length === 0) {
-      return res.status(400).json({
-        error: "No valid contacts found",
-      });
+    let delayDays = Number(step?.delayDays ?? 0);
+    let delayHours = Number(step?.delayHours ?? 0);
+
+    if (!Number.isFinite(delayDays)) delayDays = 0;
+    if (!Number.isFinite(delayHours)) delayHours = 0;
+
+    if (step?.delay_unit && step?.delay_value !== undefined) {
+      const delayValue = Number(step.delay_value) || 0;
+      if (step.delay_unit === "minutes") {
+        delayHours += delayValue / 60;
+      } else if (step.delay_unit === "hours") {
+        delayHours += delayValue;
+      } else if (step.delay_unit === "days") {
+        delayDays += delayValue;
+      }
     }
 
-    const campaign = await mongodb.Campaign.create({
-      id: uuidv4(),
-      name,
-      contacts: normalizedContacts,
-      steps: steps.map((s: any, i: number) => ({
-        ...s,
-        order: i,
-      })),
-    });
+    return {
+      templateId,
+      template_name: step?.template_name || "",
+      scheduleType,
+      delayDays,
+      delayHours,
+      specificDate: step?.specificDate || undefined,
+      specificTime: step?.specificTime || step?.send_at_time || undefined,
+      order: index,
+    };
+  };
 
-    res.json(campaign);
+  const getCampaignStepDelayMs = (step: any): number => {
+    const delayDays = Number(step?.delayDays ?? 0);
+    const delayHours = Number(step?.delayHours ?? 0);
+    const delayMinutes = Number(step?.delayMinutes ?? 0);
+    const delayValue = Number(step?.delay_value ?? 0);
+    const delayUnit = step?.delay_unit;
+
+    let totalMinutes =
+      (Number.isFinite(delayDays) ? delayDays : 0) * 24 * 60 +
+      (Number.isFinite(delayHours) ? delayHours : 0) * 60 +
+      (Number.isFinite(delayMinutes) ? delayMinutes : 0);
+
+    if (Number.isFinite(delayValue) && delayValue > 0) {
+      if (delayUnit === "minutes") {
+        totalMinutes += delayValue;
+      } else if (delayUnit === "hours") {
+        totalMinutes += delayValue * 60;
+      } else if (delayUnit === "days") {
+        totalMinutes += delayValue * 24 * 60;
+      }
+    }
+
+    return Math.max(0, totalMinutes * 60 * 1000);
+  };
+
+  const calculateCampaignNextRunAt = (
+    step: any,
+    baseDate: Date = new Date()
+  ): Date => {
+    if (step?.scheduleType === "specific" && step?.specificDate && step?.specificTime) {
+      const specific = new Date(`${step.specificDate}T${step.specificTime}:00`);
+      if (!Number.isNaN(specific.getTime())) {
+        return specific;
+      }
+    }
+
+    const nextRunAt = new Date(baseDate.getTime() + getCampaignStepDelayMs(step));
+    const preferredTime = step?.specificTime || step?.send_at_time;
+
+    if (preferredTime) {
+      const [hours, minutes] = String(preferredTime).split(":").map(Number);
+      if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+        nextRunAt.setHours(hours, minutes, 0, 0);
+        if (nextRunAt < baseDate) {
+          nextRunAt.setDate(nextRunAt.getDate() + 1);
+        }
+      }
+    }
+
+    return nextRunAt;
+  };
+
+  const normalizeCampaignContact = (contact: any): string | null => {
+    if (typeof contact === "string") {
+      const digits = contact.replace(/\D/g, "");
+      if (!digits) return null;
+      return digits.length === 10 ? `91${digits}` : digits;
+    }
+
+    if (typeof contact === "object" && contact) {
+      const raw = String(
+        contact.phone || contact.Phone || contact.mobile || contact.whatsapp || ""
+      );
+      const digits = raw.replace(/\D/g, "");
+      if (!digits) return null;
+      return digits.length === 10 ? `91${digits}` : digits;
+    }
+
+    return null;
+  };
+
+  app.post("/api/drip-campaigns", async (req, res) => {
+    try {
+      const {
+        name,
+        campaign_name,
+        contacts = [],
+        steps = [],
+        form_id,
+        form_name,
+      } = req.body || {};
+
+      const campaignName = campaign_name || name;
+
+      if (!campaignName || typeof campaignName !== "string") {
+        return res.status(400).json({ error: "Campaign name is required" });
+      }
+
+      const normalizedSteps = (Array.isArray(steps) ? steps : [])
+        .map((s: any, i: number) => normalizeCampaignStep(s, i))
+        .filter(Boolean);
+
+      if (normalizedSteps.length === 0) {
+        return res.status(400).json({
+          error: "At least one valid campaign step is required",
+        });
+      }
+
+      const templateIds = Array.from(
+        new Set(
+          normalizedSteps
+            .map((step: any) => String(step?.templateId || "").trim())
+            .filter(Boolean)
+        )
+      );
+      const templateDocs = templateIds.length
+        ? await mongodb.Template.find(
+            { id: { $in: templateIds } },
+            { id: 1, name: 1 }
+          ).lean()
+        : [];
+      const templateNameById = new Map<string, string>(
+        (templateDocs as any[]).map((tpl) => [
+          String(tpl.id || ""),
+          String(tpl.name || ""),
+        ])
+      );
+      const resolvedSteps = normalizedSteps.map((step: any) => ({
+        ...step,
+        template_name:
+          String(step?.template_name || "").trim() ||
+          templateNameById.get(String(step.templateId || "")) ||
+          "",
+      }));
+
+      const now = new Date();
+      for (let i = 0; i < resolvedSteps.length; i++) {
+        const step = resolvedSteps[i];
+        if (
+          step?.scheduleType === "specific" &&
+          step?.specificDate &&
+          step?.specificTime
+        ) {
+          const specificAt = new Date(
+            `${step.specificDate}T${step.specificTime}:00`
+          );
+          if (Number.isNaN(specificAt.getTime())) {
+            return res.status(400).json({
+              error: `Invalid specific date/time for step ${i + 1}`,
+            });
+          }
+          if (specificAt <= now) {
+            return res.status(400).json({
+              error: `Step ${i + 1} specific date/time is in the past. Please select a future time.`,
+            });
+          }
+        }
+      }
+
+      const initialContacts = (Array.isArray(contacts) ? contacts : [])
+        .map(normalizeCampaignContact)
+        .filter(Boolean) as string[];
+
+      let normalizedContacts = Array.from(new Set(initialContacts));
+
+      if (normalizedContacts.length === 0 && form_id) {
+        const leads = await mongodb.Leadfb.find({
+          form_id,
+          phone: { $exists: true, $ne: "" },
+        }).lean();
+
+        normalizedContacts = Array.from(
+          new Set(
+            leads
+              .map((lead: any) => normalizeCampaignContact(lead.phone))
+              .filter(Boolean) as string[]
+          )
+        );
+      }
+
+      if (normalizedContacts.length === 0) {
+        return res.status(400).json({
+          error: "No valid contacts found",
+        });
+      }
+
+      const firstStep = resolvedSteps[0];
+      const firstRunAt = firstStep
+        ? calculateCampaignNextRunAt(firstStep, new Date())
+        : new Date();
+
+      const campaign = await mongodb.Campaign.create({
+        id: uuidv4(),
+        name: campaignName,
+        campaign_name: campaignName,
+        form_id: form_id || undefined,
+        form_name: form_name || undefined,
+        is_active: true,
+        status: "running",
+        currentStep: 0,
+        nextRunAt: firstRunAt,
+        contacts: normalizedContacts,
+        steps: resolvedSteps,
+      });
+
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error creating drip campaign:", error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to create campaign";
+      res.status(500).json({ error: message });
+    }
   });
   // GET /api/reports/drip-campaigns
   app.get("/api/reports/drip-campaigns", async (req, res) => {
@@ -412,14 +763,23 @@ export async function registerRoutes(
   // GET /api/reports/drip-campaigns/:campaignId/summary
   app.get("/api/reports/drip-campaigns/:id/summary", async (req, res) => {
     const campaignId = req.params.id;
+    const campaignIdFilter = mongoose.Types.ObjectId.isValid(campaignId)
+      ? { $in: [new mongoose.Types.ObjectId(campaignId), campaignId] }
+      : campaignId;
 
     const steps = await mongodb.CampaignLog.aggregate([
-      { $match: { campaignId } },
+      { $match: { campaignId: campaignIdFilter } },
       {
         $group: {
           _id: "$stepIndex",
           sent: {
-            $sum: { $cond: [{ $eq: ["$status", "sent"] }, 1, 0] },
+            $sum: {
+              $cond: [
+                { $in: ["$status", ["accepted", "sent", "delivered", "read"]] },
+                1,
+                0,
+              ],
+            },
           },
           failed: {
             $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
@@ -439,7 +799,12 @@ export async function registerRoutes(
   app.get("/api/reports/drip-campaigns/:id/logs", async (req, res) => {
     const { stepIndex, status, contact, page = 1, limit = 20 } = req.query;
 
-    const filter: any = { campaignId: req.params.id };
+    const campaignId = req.params.id;
+    const filter: any = {
+      campaignId: mongoose.Types.ObjectId.isValid(campaignId)
+        ? { $in: [new mongoose.Types.ObjectId(campaignId), campaignId] }
+        : campaignId,
+    };
 
     if (stepIndex !== undefined) filter.stepIndex = +stepIndex;
     if (status) filter.status = status;
@@ -456,19 +821,139 @@ export async function registerRoutes(
   });
 
 
-  app.get("/api/drip-campaigns", async (_req, res) => {
-    const campaigns = await mongodb.Campaign.find().sort({ createdAt: -1 });
-    res.json(campaigns);
+  app.get("/api/drip-campaigns", async (req, res) => {
+    try {
+      const { search = "", status = "all", form_id, is_active } = req.query as any;
+      const filter: any = {};
+
+      if (search && String(search).trim()) {
+        const searchRegex = { $regex: String(search).trim(), $options: "i" };
+        filter.$or = [
+          { name: searchRegex },
+          { campaign_name: searchRegex },
+          { id: searchRegex },
+          { form_name: searchRegex },
+          { form_id: searchRegex },
+        ];
+      }
+
+      if (status && status !== "all") {
+        filter.status = status;
+      }
+
+      if (form_id) {
+        filter.form_id = form_id;
+      }
+
+      if (typeof is_active === "string") {
+        if (is_active === "true") filter.is_active = true;
+        if (is_active === "false") filter.is_active = false;
+      }
+
+      const campaigns = await mongodb.Campaign.find(filter)
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json(
+        campaigns.map((campaign: any) => ({
+          ...campaign,
+          campaign_name: campaign.campaign_name || campaign.name,
+          is_active:
+            typeof campaign.is_active === "boolean"
+              ? campaign.is_active
+              : campaign.status === "running",
+        }))
+      );
+    } catch (error) {
+      console.error("Error fetching drip campaigns:", error);
+      res.status(500).json({ error: "Failed to fetch drip campaigns" });
+    }
+  });
+
+  app.post("/api/drip-campaigns/:id/toggle", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const isActive = req.body?.is_active === true || req.body?.is_active === "true";
+
+      const query = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { id };
+      const campaign: any = await mongodb.Campaign.findOne(query);
+
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const wasCompleted = campaign.status === "completed";
+      campaign.is_active = isActive;
+      campaign.status = isActive ? "running" : "paused";
+
+      if (isActive) {
+        if (wasCompleted || campaign.currentStep >= campaign.steps.length) {
+          campaign.currentStep = 0;
+        }
+
+        const now = new Date();
+        const currentStep = campaign.steps[campaign.currentStep];
+        if (!currentStep) {
+          campaign.status = "completed";
+          campaign.is_active = false;
+          campaign.nextRunAt = null;
+        } else if (
+          campaign.nextRunAt instanceof Date &&
+          !Number.isNaN(campaign.nextRunAt.getTime()) &&
+          campaign.nextRunAt > now
+        ) {
+          // Keep existing future schedule when resuming.
+        } else {
+          campaign.nextRunAt = calculateCampaignNextRunAt(currentStep, now);
+        }
+      } else {
+        campaign.isProcessing = false;
+      }
+
+      await campaign.save();
+      return res.json(campaign);
+    } catch (error) {
+      console.error("Error toggling campaign:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
   });
 
   app.patch("/api/drip-campaigns/:id/start", async (req, res) => {
-    const campaign = await mongodb.Campaign.findById(req.params.id);
+    const { id } = req.params;
+    const query = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { id };
+    const campaign = await mongodb.Campaign.findOne(query);
 
     if (!campaign) return res.status(404).send();
 
+    const wasCompleted =
+      campaign.status === "completed" ||
+      !Array.isArray(campaign.steps) ||
+      campaign.currentStep >= campaign.steps.length;
+
+    if (wasCompleted) {
+      campaign.currentStep = 0;
+    }
+
     campaign.status = "running";
-    campaign.currentStep = 0;
-    campaign.nextRunAt = new Date(); // start now
+    campaign.is_active = true;
+
+    const now = new Date();
+    const currentStep = campaign.steps?.[campaign.currentStep];
+    if (currentStep) {
+      if (
+        campaign.nextRunAt instanceof Date &&
+        !Number.isNaN(campaign.nextRunAt.getTime()) &&
+        campaign.nextRunAt > now
+      ) {
+        // Keep precomputed future schedule when resuming.
+      } else {
+        campaign.nextRunAt = calculateCampaignNextRunAt(currentStep, now);
+      }
+    } else {
+      campaign.nextRunAt = null;
+      campaign.status = "completed";
+      campaign.is_active = false;
+    }
 
     await campaign.save();
     res.json(campaign);
@@ -490,6 +975,7 @@ export async function registerRoutes(
       }
 
       campaign.status = "paused";
+      campaign.is_active = false;
       campaign.isProcessing = false;
 
       await campaign.save();
@@ -794,7 +1280,7 @@ export async function registerRoutes(
         },
         summary: {
           ...summary,
-          totalCost: `₹${summary.totalCost.toFixed(2)}`,
+          totalCost: `ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹${summary.totalCost.toFixed(2)}`,
         },
         breakdown,
       });
@@ -1835,8 +2321,12 @@ export async function registerRoutes(
 
   app.get("/api/templates", async (req, res) => {
     try {
+      const metaOnly = req.query.metaOnly === "true";
       const templates = await storage.getTemplates();
-      res.json(templates);
+      const filteredTemplates = metaOnly
+        ? templates.filter((template: any) => Boolean(template?.metaTemplateId))
+        : templates;
+      res.json(filteredTemplates);
     } catch (error) {
       res.status(500).json({ message: "Failed to get templates" });
     }
@@ -1862,11 +2352,16 @@ export async function registerRoutes(
 
   app.post("/api/templates", async (req, res) => {
     try {
-      // For image headers, headerImage is the Meta media ID — store it as-is
-      const headerImageUrl =
-        req.body.headerType === "image"
-          ? req.body.headerImage // This is metaData.id from Meta, e.g. "25694916670197307"
-          : null;
+      // For image headers, headerImage is the Meta media ID ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â store it as-is
+      const mediaHeaderTypes = ["image", "video", "document"];
+      const isMediaHeader = mediaHeaderTypes.includes(req.body.headerType);
+      const headerImageUrl = isMediaHeader
+        ? req.body.headerMedia ||
+          req.body.headerImage ||
+          req.body.headerImageUrl ||
+          null
+        : null;
+      const previewUrl = isMediaHeader ? req.body.previewUrl || null : null;
 
       console.log("[TemplateCreate] creating template:", req.body.name);
 
@@ -1874,12 +2369,13 @@ export async function registerRoutes(
         id: uuidv4(),
         name: req.body.name,
         category: req.body.category,
+        templateType: req.body.templateType || "default",
         language: req.body.language,
         headerType: req.body.headerType,
         content: req.body.content,
         headerText: req.body.headerText,
-        headerImageUrl, // ← Just store the Meta ID here
-        previewUrl: req.body.previewUrl,
+        headerImageUrl,
+        previewUrl,
         body: req.body.body,
         footer: req.body.footer,
         buttons: req.body.buttons,
@@ -1922,6 +2418,249 @@ export async function registerRoutes(
     }
   };
 
+  const resolveTemplateDeleteCredentials = async (req: Request) => {
+    const { credentialsService } = await import(
+      "./modules/credentials/credentials.service"
+    );
+
+    const sessionUserId = (req as any).session?.user?.id as string | undefined;
+    const queryUserId =
+      typeof req.query.userId === "string" ? req.query.userId : undefined;
+    const bodyUserId =
+      req.body && typeof req.body.userId === "string"
+        ? req.body.userId
+        : undefined;
+    const userId = sessionUserId || queryUserId || bodyUserId;
+
+    let token: string | undefined;
+    let wabaId: string | undefined;
+
+    if (userId) {
+      const credentials = await credentialsService.getDecryptedCredentials(
+        userId
+      );
+      if (credentials?.whatsappToken) {
+        token = credentials.whatsappToken;
+      }
+      if (credentials?.businessAccountId) {
+        wabaId = credentials.businessAccountId;
+      }
+    }
+
+    if (!token) {
+      token =
+        process.env.WHATSAPP_TOKEN_NEW ||
+        process.env.WHATSAPP_TOKEN ||
+        process.env.FB_ACCESS_TOKEN ||
+        process.env.SYSTEM_USER_TOKEN_META;
+    }
+    if (!wabaId) {
+      wabaId = process.env.WABA_ID;
+    }
+
+    return { token, wabaId };
+  };
+
+  const deleteMetaTemplate = async (
+    wabaId: string,
+    token: string,
+    options: { metaTemplateId?: string; name?: string; language?: string }
+  ) => {
+    const baseUrl = `https://graph.facebook.com/v21.0/${wabaId}/message_templates`;
+    const META_DELETE_TIMEOUT_MS = 20000;
+    const META_DELETE_MAX_RETRIES = 2;
+    const RETRY_BASE_DELAY_MS = 700;
+
+    const executeDelete = async (params: URLSearchParams) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        META_DELETE_TIMEOUT_MS
+      );
+      const response = await fetch(`${baseUrl}?${params.toString()}`, {
+        method: "DELETE",
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+      const data = await response.json().catch(() => ({}));
+      return { response, data };
+    };
+
+    const sleep = async (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+
+    const isRetryableFailure = (input: {
+      status?: number;
+      data?: any;
+      error?: any;
+    }) => {
+      if (input.error?.name === "AbortError") return true;
+      if (typeof input.status === "number") {
+        if (input.status === 429 || input.status >= 500) return true;
+      }
+
+      const metaError = input.data?.error;
+      const code = Number(metaError?.code);
+      if ([4, 17, 32, 613].includes(code)) return true; // rate-limit/transient Meta codes
+
+      return false;
+    };
+
+    const runDeleteWithRetry = async (params: URLSearchParams) => {
+      let lastResult: any = null;
+      let lastError: any = null;
+
+      for (let attempt = 0; attempt <= META_DELETE_MAX_RETRIES; attempt++) {
+        try {
+          const result = await executeDelete(params);
+          const failed = !result.response.ok || (result.data as any)?.error;
+          if (!failed) {
+            return { success: true, result };
+          }
+
+          lastResult = result;
+          const retryable = isRetryableFailure({
+            status: result.response.status,
+            data: result.data,
+          });
+
+          if (!retryable || attempt === META_DELETE_MAX_RETRIES) {
+            return { success: false, result: lastResult };
+          }
+        } catch (error: any) {
+          lastError = error;
+          const retryable = isRetryableFailure({ error });
+
+          if (!retryable || attempt === META_DELETE_MAX_RETRIES) {
+            return { success: false, error: lastError };
+          }
+        }
+
+        await sleep(RETRY_BASE_DELAY_MS * (attempt + 1));
+      }
+
+      return { success: false, result: lastResult, error: lastError };
+    };
+
+    const normalizeLang = (language?: string) =>
+      language ? language.replace("-", "_") : undefined;
+    const language = normalizeLang(options.language);
+
+    const createParams = (input: {
+      id?: string;
+      name?: string;
+      language?: string;
+    }) => {
+      const params = new URLSearchParams({ access_token: token });
+      if (input.id) params.set("hsm_id", input.id);
+      if (input.name) params.set("name", input.name);
+      if (input.language) params.set("language", input.language);
+      return params;
+    };
+
+    const parameterCandidates: URLSearchParams[] = [];
+    if (options.metaTemplateId && options.name && language) {
+      parameterCandidates.push(
+        createParams({
+          id: options.metaTemplateId,
+          name: options.name,
+          language,
+        })
+      );
+    }
+    if (options.metaTemplateId && options.name) {
+      parameterCandidates.push(
+        createParams({ id: options.metaTemplateId, name: options.name })
+      );
+    }
+    if (options.name && language) {
+      parameterCandidates.push(createParams({ name: options.name, language }));
+    }
+    if (options.name) {
+      parameterCandidates.push(createParams({ name: options.name }));
+    }
+    if (options.metaTemplateId) {
+      parameterCandidates.push(createParams({ id: options.metaTemplateId }));
+    }
+
+    const seen = new Set<string>();
+    const deleteAttempts = parameterCandidates.filter((params) => {
+      const key = params.toString();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    let lastTry: any = null;
+    for (const params of deleteAttempts) {
+      const attempt = await runDeleteWithRetry(params);
+      if (attempt.success) {
+        return { success: true, data: attempt.result.data };
+      }
+      lastTry = attempt;
+    }
+
+    // Fallback: if template is already absent on Meta, treat as success and continue local delete.
+    if (options.name) {
+      try {
+        const lookupUrl = `${baseUrl}?fields=id,name,language,status&limit=200&access_token=${encodeURIComponent(token)}`;
+        const lookupResponse = await fetch(lookupUrl, { method: "GET" });
+        const lookupData = await lookupResponse.json().catch(() => ({}));
+
+        if (lookupResponse.ok && Array.isArray((lookupData as any).data)) {
+          const matches = (lookupData as any).data.filter((item: any) => {
+            if (item?.name !== options.name) return false;
+            if (!language) return true;
+            return normalizeLang(item?.language) === language;
+          });
+
+          if (matches.length === 0) {
+            return {
+              success: true,
+              alreadyMissing: true,
+              data: { message: "Template not present on Meta dashboard." },
+            };
+          }
+
+          for (const match of matches) {
+            const retryByLookup = await runDeleteWithRetry(
+              createParams({
+                id: String(match.id || ""),
+                name: String(match.name || options.name),
+                language: normalizeLang(match.language),
+              })
+            );
+
+            if (retryByLookup.success) {
+              return { success: true, data: retryByLookup.result.data };
+            }
+            lastTry = retryByLookup;
+          }
+        }
+      } catch {
+        // Keep last failure if lookup also fails
+      }
+    }
+
+    if (lastTry?.error) {
+      return {
+        success: false,
+        error:
+          lastTry.error?.name === "AbortError"
+            ? "Meta delete request timed out after retries"
+            : lastTry.error?.message || "Meta delete request failed",
+      };
+    }
+
+    const metaError = lastTry?.result?.data?.error;
+    return {
+      success: false,
+      error:
+        metaError?.message ||
+        `Meta API delete failed with status ${lastTry?.result?.response?.status ?? "unknown"}`,
+      details: metaError || lastTry?.result?.data,
+    };
+  };
+
 
   app.put("/api/templates/:id", async (req, res) => {
     try {
@@ -1932,19 +2671,27 @@ export async function registerRoutes(
         JSON.stringify(req.body, null, 2)
       );
 
-      // Compute header image URL if needed
-      const headerImageUrl =
-        req.body.headerType === "image" ? req.body.headerImage : null;
+      const mediaHeaderTypes = ["image", "video", "document"];
+      const isMediaHeader = mediaHeaderTypes.includes(req.body.headerType);
+      const headerImageUrl = isMediaHeader
+        ? req.body.headerMedia ||
+          req.body.headerImage ||
+          req.body.headerImageUrl ||
+          null
+        : null;
+      const previewUrl = isMediaHeader ? req.body.previewUrl || null : null;
 
       // Prepare local DB update
       const updateData = {
         name: req.body.name,
         category: req.body.category,
+        templateType: req.body.templateType || "default",
         language: req.body.language,
         headerType: req.body.headerType,
         content: req.body.content,
         headerText: req.body.headerText,
         headerImageUrl,
+        previewUrl,
         body: req.body.body,
         footer: req.body.footer,
         buttons: req.body.buttons,
@@ -1971,7 +2718,7 @@ export async function registerRoutes(
         try {
           const metaPayload = buildMetaTemplate(template);
 
-          // ❗ DO NOT CHANGE NAME
+          // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â DO NOT CHANGE NAME
           delete metaPayload.name;
 
           const result = await updateMetaTemplate(
@@ -2013,13 +2760,241 @@ export async function registerRoutes(
 
   app.delete("/api/templates/:id", async (req, res) => {
     try {
+      const template = await storage.getTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const shouldDeleteFromMeta = req.query.deleteFromMeta !== "false";
+      const metaTemplateId = (template as any).metaTemplateId as
+        | string
+        | undefined;
+
+      let deletedFromMeta = false;
+      let metaDeletionSkipped = false;
+
+      if (shouldDeleteFromMeta) {
+        if (metaTemplateId) {
+          const { token, wabaId } = await resolveTemplateDeleteCredentials(req);
+          if (!token || !wabaId) {
+            return res.status(400).json({
+              message:
+                "Cannot delete from Meta dashboard. WhatsApp credentials are missing.",
+              hint: "Configure WhatsApp Access Token and WABA ID in Settings.",
+            });
+          }
+
+          const metaDelete = await deleteMetaTemplate(wabaId, token, {
+            metaTemplateId,
+            name: template.name,
+            language: (template as any).language,
+          });
+          if (!metaDelete.success) {
+            return res.status(502).json({
+              message:
+                "Failed to delete template from Meta dashboard. Local template was not deleted.",
+              error: metaDelete.error,
+              details: metaDelete.details,
+            });
+          }
+
+          if (metaDelete.alreadyMissing) {
+            metaDeletionSkipped = true;
+          } else {
+            deletedFromMeta = true;
+          }
+        } else {
+          metaDeletionSkipped = true;
+        }
+      }
+
       const success = await storage.deleteTemplate(req.params.id);
       if (!success) {
         return res.status(404).json({ message: "Template not found" });
       }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete template" });
+
+      res.json({
+        success: true,
+        deletedFromMeta,
+        metaDeletionSkipped,
+        message: deletedFromMeta
+          ? "Template deleted from local database and Meta dashboard."
+          : metaDeletionSkipped
+            ? "Template deleted locally. Meta deletion skipped because no linked Meta template ID exists."
+            : "Template deleted from local database.",
+      });
+    } catch (error: any) {
+      res
+        .status(500)
+        .json({ message: "Failed to delete template", error: error.message });
+    }
+  });
+
+  app.post("/api/templates/bulk-delete", async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter((id: unknown) => typeof id === "string")
+        : [];
+      const shouldDeleteFromMeta = req.query.deleteFromMeta !== "false";
+
+      if (ids.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "Please provide at least one template id." });
+      }
+
+      let token: string | undefined;
+      let wabaId: string | undefined;
+      if (shouldDeleteFromMeta) {
+        const creds = await resolveTemplateDeleteCredentials(req);
+        token = creds.token;
+        wabaId = creds.wabaId;
+
+        if (!token || !wabaId) {
+          return res.status(400).json({
+            message:
+              "Cannot delete from Meta dashboard. WhatsApp credentials are missing.",
+            hint: "Configure WhatsApp Access Token and WABA ID in Settings.",
+          });
+        }
+      }
+
+      let deletedCount = 0;
+      let deletedFromMetaCount = 0;
+      let metaDeletionSkippedCount = 0;
+      const failed: Array<{ id: string; name?: string; error: string }> = [];
+
+      const concurrency = 2;
+      const queue = ids.slice();
+      const workerResults: Array<{
+        id: string;
+        name?: string;
+        ok: boolean;
+        deletedFromMeta?: boolean;
+        metaSkipped?: boolean;
+        error?: string;
+      }> = [];
+
+      const workers = Array.from(
+        { length: Math.min(concurrency, queue.length) },
+        async () => {
+          while (queue.length > 0) {
+            const id = queue.shift();
+            if (!id) break;
+
+            try {
+              const template = await storage.getTemplate(id);
+              if (!template) {
+                workerResults.push({
+                  id,
+                  ok: false,
+                  error: "Template not found",
+                });
+                continue;
+              }
+
+              let deletedFromMeta = false;
+              let metaSkipped = false;
+
+              if (shouldDeleteFromMeta) {
+                const metaTemplateId = (template as any).metaTemplateId as
+                  | string
+                  | undefined;
+
+                if (metaTemplateId) {
+                  const metaDelete = await deleteMetaTemplate(wabaId!, token!, {
+                    metaTemplateId,
+                    name: template.name,
+                    language: (template as any).language,
+                  });
+
+                  if (!metaDelete.success) {
+                    workerResults.push({
+                      id,
+                      name: template.name,
+                      ok: false,
+                      error: metaDelete.error || "Meta delete failed",
+                    });
+                    continue;
+                  }
+                  if (metaDelete.alreadyMissing) {
+                    metaSkipped = true;
+                  } else {
+                    deletedFromMeta = true;
+                  }
+                } else {
+                  metaSkipped = true;
+                }
+              }
+
+              const localDeleted = await storage.deleteTemplate(id);
+              if (!localDeleted) {
+                workerResults.push({
+                  id,
+                  name: template.name,
+                  ok: false,
+                  error: "Failed to delete from local database",
+                });
+                continue;
+              }
+
+              workerResults.push({
+                id,
+                name: template.name,
+                ok: true,
+                deletedFromMeta,
+                metaSkipped,
+              });
+            } catch (itemError: any) {
+              workerResults.push({
+                id,
+                ok: false,
+                error: itemError?.message || "Unexpected delete error",
+              });
+            }
+          }
+        }
+      );
+
+      await Promise.all(workers);
+
+      for (const item of workerResults) {
+        if (item.ok) {
+          deletedCount += 1;
+          if (item.deletedFromMeta) deletedFromMetaCount += 1;
+          if (item.metaSkipped) metaDeletionSkippedCount += 1;
+        } else {
+          failed.push({
+            id: item.id,
+            name: item.name,
+            error: item.error || "Delete failed",
+          });
+        }
+      }
+
+      const responsePayload = {
+        success: failed.length === 0,
+        deletedCount,
+        deletedFromMetaCount,
+        metaDeletionSkippedCount,
+        failedCount: failed.length,
+        failed,
+        message:
+          failed.length === 0
+            ? `Deleted ${deletedCount} template${deletedCount === 1 ? "" : "s"} successfully.`
+            : `Deleted ${deletedCount} template${deletedCount === 1 ? "" : "s"} with ${failed.length} failure${failed.length === 1 ? "" : "s"}.`,
+      };
+
+      if (failed.length > 0) {
+        return res.status(207).json(responsePayload);
+      }
+
+      return res.json(responsePayload);
+    } catch (error: any) {
+      return res.status(500).json({
+        message: "Failed to delete selected templates",
+        error: error.message,
+      });
     }
   });
 
@@ -2185,7 +3160,7 @@ export async function registerRoutes(
 
       // Fetch templates from Meta Graph API with more fields
       const response = await fetch(
-        `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=name,status,category,language,components&access_token=${token}`
+        `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=id,name,status,category,language,components&limit=500&access_token=${token}`
       );
 
       if (!response.ok) {
@@ -2202,13 +3177,97 @@ export async function registerRoutes(
       const metaTemplates = data.data || [];
       let synced = 0;
       let updated = 0;
+      let removedStaleMetaLinked = 0;
       const approvedTemplates: string[] = [];
+      const existingTemplates = await storage.getTemplates();
+      const metaTemplateIds = new Set<string>();
+      const mediaHeaderTypes = new Set(["image", "video", "document"]);
+
+      const isHttpUrl = (value: unknown): value is string => {
+        return (
+          typeof value === "string" &&
+          /^https?:\/\//i.test(value.trim())
+        );
+      };
+
+      const parseMetaTemplateComponents = (components: any[] | undefined) => {
+        let content = "";
+        let footer = "";
+        let headerText = "";
+        let headerType: "text" | "image" | "video" | "document" | null = null;
+        let mediaPreviewUrl: string | null = null;
+
+        const componentList = Array.isArray(components) ? components : [];
+
+        for (const component of componentList) {
+          const componentType = String(component?.type || "").toUpperCase();
+
+          if (componentType === "HEADER") {
+            const normalizedFormat = String(
+              component?.format || (component?.text ? "TEXT" : "")
+            ).toLowerCase();
+
+            if (normalizedFormat === "text") {
+              headerType = "text";
+              headerText = String(component?.text || "");
+              continue;
+            }
+
+            if (
+              normalizedFormat === "image" ||
+              normalizedFormat === "video" ||
+              normalizedFormat === "document"
+            ) {
+              headerType = normalizedFormat;
+              const handles = Array.isArray(component?.example?.header_handle)
+                ? component.example.header_handle
+                : [];
+              const firstHandle = handles.find((value: unknown) =>
+                isHttpUrl(value)
+              );
+              mediaPreviewUrl = firstHandle
+                ? String(firstHandle).trim()
+                : null;
+              continue;
+            }
+
+            continue;
+          }
+
+          if (componentType === "BODY") {
+            content = String(component?.text || "");
+            continue;
+          }
+
+          if (componentType === "FOOTER") {
+            footer = String(component?.text || "");
+          }
+        }
+
+        const matches = content.match(/\{\{(\d+)\}\}/g);
+        const variables = matches
+          ? matches.map((_: string, index: number) => `var${index + 1}`)
+          : [];
+
+        return {
+          content,
+          variables,
+          footer,
+          headerType,
+          headerText,
+          mediaPreviewUrl,
+        };
+      };
 
       // console.log(
       //   `[TemplateSync] Found ${metaTemplates.length} templates from Meta`
       // );
 
       for (const metaTemplate of metaTemplates) {
+        if (metaTemplate.id) {
+          metaTemplateIds.add(String(metaTemplate.id));
+        }
+
         // Log template info
         // console.log(
         //   `[TemplateSync] Template: ${metaTemplate.name}, Status: ${metaTemplate.status}, Language: ${metaTemplate.language}`
@@ -2220,28 +3279,14 @@ export async function registerRoutes(
           );
         }
 
-        // Check if template already exists
-        const existingTemplates = await storage.getTemplates();
+        // Check if template already exists (prefer Meta ID match, fallback by name)
         const exists = existingTemplates.find(
-          (t) => t.name === metaTemplate.name
+          (t: any) =>
+            (t.metaTemplateId && t.metaTemplateId === metaTemplate.id) ||
+            t.name === metaTemplate.name
         );
 
-        // Extract content from components
-        let content = "";
-        let variables: string[] = [];
-
-        if (metaTemplate.components) {
-          const bodyComponent = metaTemplate.components.find(
-            (c: any) => c.type === "BODY"
-          );
-          if (bodyComponent) {
-            content = bodyComponent.text || "";
-            const matches = content.match(/\{\{(\d+)\}\}/g);
-            if (matches) {
-              variables = matches.map((m: string, i: number) => `var${i + 1}`);
-            }
-          }
-        }
+        const parsed = parseMetaTemplateComponents(metaTemplate.components);
 
         const status =
           metaTemplate.status === "APPROVED"
@@ -2255,28 +3300,80 @@ export async function registerRoutes(
           const newTemplate = await storage.createTemplate({
             name: metaTemplate.name,
             category: (metaTemplate.category || "utility").toLowerCase() as any,
-            content: content,
-
-            variables: variables,
+            content: parsed.content,
+            variables: parsed.variables,
           });
+
+          const isMediaHeader = mediaHeaderTypes.has(
+            String(parsed.headerType || "").toLowerCase()
+          );
+          const mediaUrl = isMediaHeader ? parsed.mediaPreviewUrl : null;
+
           await storage.updateTemplate(newTemplate.id, {
             status,
             language: metaTemplate.language || "en",
             metaTemplateId: metaTemplate.id,
             metaStatus: metaTemplate.status,
             lastSyncedAt: now,
+            headerType: parsed.headerType,
+            headerText: parsed.headerType === "text" ? parsed.headerText : null,
+            headerImageUrl: mediaUrl,
+            previewUrl: mediaUrl,
+            footer: parsed.footer || null,
+          } as any);
+          existingTemplates.push({
+            ...newTemplate,
+            status,
+            language: metaTemplate.language || "en",
+            metaTemplateId: metaTemplate.id,
+            metaStatus: metaTemplate.status,
+            headerType: parsed.headerType,
+            headerText: parsed.headerType === "text" ? parsed.headerText : null,
+            headerImageUrl: mediaUrl,
+            previewUrl: mediaUrl,
+            footer: parsed.footer || null,
           } as any);
           synced++;
         } else {
+          const isMediaHeader = mediaHeaderTypes.has(
+            String(parsed.headerType || "").toLowerCase()
+          );
+          const existingPreviewUrl = isHttpUrl((exists as any)?.previewUrl)
+            ? String((exists as any).previewUrl)
+            : isHttpUrl((exists as any)?.headerImageUrl)
+              ? String((exists as any).headerImageUrl)
+              : null;
+          const mediaUrl = isMediaHeader
+            ? existingPreviewUrl || parsed.mediaPreviewUrl || null
+            : null;
+
           await storage.updateTemplate(exists.id, {
             status,
-            content: content || exists.content,
+            content: parsed.content || exists.content,
+            variables: parsed.variables,
             language: metaTemplate.language || "en",
             metaTemplateId: metaTemplate.id,
             metaStatus: metaTemplate.status,
             lastSyncedAt: now,
+            headerType: parsed.headerType,
+            headerText: parsed.headerType === "text" ? parsed.headerText : null,
+            headerImageUrl: mediaUrl,
+            previewUrl: mediaUrl,
+            footer: parsed.footer || null,
           } as any);
           updated++;
+        }
+      }
+
+      // Remove stale local templates that were previously linked to Meta but no longer exist there.
+      const latestTemplates = await storage.getTemplates();
+      for (const template of latestTemplates as any[]) {
+        if (
+          template.metaTemplateId &&
+          !metaTemplateIds.has(String(template.metaTemplateId))
+        ) {
+          const deleted = await storage.deleteTemplate(template.id);
+          if (deleted) removedStaleMetaLinked++;
         }
       }
 
@@ -2288,9 +3385,10 @@ export async function registerRoutes(
         success: true,
         synced,
         updated,
+        removedStaleMetaLinked,
         total: metaTemplates.length,
         approvedTemplates,
-        message: `Synced ${synced} new templates, updated ${updated} existing templates from Meta. ${approvedTemplates.length} are approved.`,
+        message: `Synced ${synced} new templates, updated ${updated} existing templates from Meta, removed ${removedStaleMetaLinked} stale local templates. ${approvedTemplates.length} are approved.`,
       });
     } catch (error) {
       console.error("[TemplateSync] Error:", error);

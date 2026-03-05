@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { randomUUID } from "crypto";
 import { getMappingByFormId } from "../mapping/mapping.service";
 import { getAgentById, getAllAgents } from "../aiAgents/agent.service";
 import { generateAgentResponse } from "../ai/ai.service";
@@ -11,6 +12,7 @@ import * as contactAgentService from "../contactAgent/contactAgent.service";
 import * as prefilledTextService from "../prefilledText/prefilledText.service";
 import { credentialsService } from "../credentials/credentials.service";
 import * as whatsappService from "./whatsapp.service";
+import { CampaignLog, Message, UserCredentials, WebhookStatusEvent } from "../storage/mongodb.adapter";
 import {
   isContactBlocked,
   isPhoneBlocked,
@@ -23,8 +25,65 @@ import { interestClassificationService } from "../automation/interest/interest.s
 const WHATSAPP_TOKEN =
   process.env.WHATSAPP_TOKEN_NEW || process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const VERIFY_TOKEN =
-  process.env.VERIFY_TOKEN || "whatsapp_webhook_verify_token_2025";
+const DEFAULT_VERIFY_TOKEN = "whatsapp_webhook_verify_token_2025";
+
+function getEnvWebhookVerifyTokens(): string[] {
+  return Array.from(
+    new Set(
+      [
+        process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        process.env.WEBHOOK_VERIFY_TOKEN,
+        process.env.VERIFY_TOKEN,
+      ]
+        .map((token) => String(token || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function isStoredWebhookVerifyToken(token: string): Promise<boolean> {
+  try {
+    const found = await UserCredentials.findOne({
+      webhookVerifyToken: token,
+    })
+      .select({ _id: 1 })
+      .lean();
+    return Boolean(found);
+  } catch (error) {
+    console.error("[Webhook Verify] Failed to query stored verify tokens:", error);
+    return false;
+  }
+}
+
+function resolvePublicBaseUrl(req: Request): string {
+  const envBaseUrl =
+    process.env.PUBLIC_BASE_URL ||
+    process.env.APP_URL ||
+    process.env.BACKEND_URL ||
+    process.env.BASE_URL;
+
+  if (envBaseUrl && String(envBaseUrl).trim()) {
+    return String(envBaseUrl).trim().replace(/\/+$/, "");
+  }
+
+  const forwardedProtoRaw = req.headers["x-forwarded-proto"];
+  const forwardedProto = Array.isArray(forwardedProtoRaw)
+    ? forwardedProtoRaw[0]
+    : forwardedProtoRaw;
+  const proto = String(forwardedProto || req.protocol || "http")
+    .split(",")[0]
+    .trim();
+
+  const forwardedHostRaw = req.headers["x-forwarded-host"];
+  const forwardedHost = Array.isArray(forwardedHostRaw)
+    ? forwardedHostRaw[0]
+    : forwardedHostRaw;
+  const host = String(forwardedHost || req.get("host") || "localhost:8081")
+    .split(",")[0]
+    .trim();
+
+  return `${proto}://${host}`;
+}
 
 async function resolveUserIdFromPhoneNumberId(
   phoneNumberId: string
@@ -56,6 +115,15 @@ interface ConversationHistory {
 const conversationHistory: ConversationHistory = {};
 
 async function handleStatusUpdates(statuses: any[]): Promise<void> {
+  await handleStatusUpdatesWithContext(statuses, {});
+}
+
+async function handleStatusUpdatesWithContext(
+  statuses: any[],
+  context: { phoneNumberId?: string; wabaId?: string }
+): Promise<void> {
+  const webhookReceivedAt = new Date();
+
   for (const status of statuses) {
     const messageId = status.id;
     const statusType = status.status;
@@ -63,12 +131,63 @@ async function handleStatusUpdates(statuses: any[]): Promise<void> {
     const timestamp = status.timestamp
       ? new Date(parseInt(status.timestamp) * 1000)
       : new Date();
+    const firstError = status?.errors?.[0];
+    const failureReason =
+      firstError?.title ||
+      firstError?.message ||
+      firstError?.error_data?.details ||
+      "Message delivery failed";
 
     console.log(
       `[Webhook Status] Message ${messageId} status: ${statusType} for ${recipientPhone}`
     );
 
     try {
+      const nowIso = new Date().toISOString();
+      const statusTimestamp = timestamp;
+      const eventPayload = {
+        messageId: messageId || undefined,
+        recipientId: recipientPhone || undefined,
+        status: statusType || "unknown",
+        statusTimestamp,
+        webhookReceivedAt,
+        phoneNumberId: context.phoneNumberId || undefined,
+        wabaId: context.wabaId || undefined,
+        conversationId: status?.conversation?.id || undefined,
+        pricingCategory: status?.pricing?.category || undefined,
+        errorCode: firstError?.code ? String(firstError.code) : undefined,
+        errorTitle: firstError?.title || undefined,
+        errorMessage: firstError?.message || undefined,
+        errorDetails: firstError?.error_data?.details || undefined,
+        rawStatus: status,
+        updatedAt: nowIso,
+      };
+
+      if (messageId) {
+        await WebhookStatusEvent.findOneAndUpdate(
+          {
+            messageId,
+            status: statusType || "unknown",
+            statusTimestamp,
+            recipientId: recipientPhone || null,
+          },
+          {
+            $set: eventPayload,
+            $setOnInsert: {
+              id: randomUUID(),
+              createdAt: nowIso,
+            },
+          },
+          { upsert: true, new: true }
+        );
+      } else {
+        await WebhookStatusEvent.create({
+          id: randomUUID(),
+          ...eventPayload,
+          createdAt: nowIso,
+        });
+      }
+
       if (statusType === "delivered") {
         await campaignService.updateCampaignContactStatus(
           messageId,
@@ -81,6 +200,61 @@ async function handleStatusUpdates(statuses: any[]): Promise<void> {
           "read",
           timestamp
         );
+      } else if (statusType === "failed") {
+        console.error(
+          `[Webhook Status] Message ${messageId} FAILED for ${recipientPhone}:`,
+          {
+            code: firstError?.code,
+            title: firstError?.title,
+            message: firstError?.message,
+            details: firstError?.error_data?.details,
+          }
+        );
+
+        await campaignService.updateCampaignContactStatus(
+          messageId,
+          "failed",
+          timestamp,
+          failureReason
+        );
+      }
+
+      if (messageId) {
+        const messageStatusMap: Record<string, "sent" | "delivered" | "read" | "failed"> = {
+          sent: "sent",
+          accepted: "sent",
+          delivered: "delivered",
+          read: "read",
+          failed: "failed",
+        };
+        const mappedMessageStatus = messageStatusMap[String(statusType || "").toLowerCase()];
+        if (mappedMessageStatus) {
+          await Message.updateMany(
+            { whatsappMessageId: messageId },
+            { $set: { status: mappedMessageStatus } }
+          );
+        }
+
+        const dripUpdate: Record<string, unknown> = {
+          providerStatus: statusType,
+        };
+
+        if (statusType === "delivered") {
+          dripUpdate.status = "delivered";
+          dripUpdate.deliveredAt = timestamp;
+        } else if (statusType === "read") {
+          dripUpdate.status = "read";
+          dripUpdate.readAt = timestamp;
+        } else if (statusType === "failed") {
+          dripUpdate.status = "failed";
+          dripUpdate.failedAt = timestamp;
+          dripUpdate.error = failureReason;
+        } else if (statusType === "sent") {
+          dripUpdate.status = "accepted";
+          dripUpdate.sentAt = timestamp;
+        }
+
+        await CampaignLog.updateMany({ messageId }, { $set: dripUpdate });
       }
     } catch (error) {
       console.error(`[Webhook Status] Error updating campaign status:`, error);
@@ -90,12 +264,21 @@ async function handleStatusUpdates(statuses: any[]): Promise<void> {
 
 export async function verifyWebhook(req: Request, res: Response) {
   const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
+  const token = String(req.query["hub.verify_token"] || "");
   const challenge = req.query["hub.challenge"];
 
   console.log("WhatsApp webhook verification:", { mode, token, challenge });
 
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+  const envTokens = getEnvWebhookVerifyTokens();
+  const hasEnvMatch = envTokens.includes(token);
+  const hasStoredMatch = token ? await isStoredWebhookVerifyToken(token) : false;
+  const hasDefaultMatch = token === DEFAULT_VERIFY_TOKEN;
+
+  if (
+    mode === "subscribe" &&
+    Boolean(token) &&
+    (hasEnvMatch || hasStoredMatch || hasDefaultMatch)
+  ) {
     console.log("Webhook verified successfully");
     return res.status(200).send(challenge);
   }
@@ -121,7 +304,10 @@ export async function handleWebhook(req: Request, res: Response) {
 
     // Handle message status updates (delivered, read, sent)
     if (statuses && statuses.length > 0) {
-      await handleStatusUpdates(statuses);
+      await handleStatusUpdatesWithContext(statuses, {
+        phoneNumberId: value?.metadata?.phone_number_id,
+        wabaId: entry?.id,
+      });
       return res.sendStatus(200);
     }
 
@@ -596,6 +782,107 @@ export async function handleWebhook(req: Request, res: Response) {
     // Returning 500 causes Meta to retry the webhook, creating duplicate messages
     console.error("Error handling webhook:", error);
     return res.sendStatus(200);
+  }
+}
+
+export async function getWebhookStatusEvents(req: Request, res: Response) {
+  try {
+    const limitRaw = Number(req.query.limit || 100);
+    const pageRaw = Number(req.query.page || 1);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(500, Math.max(1, Math.floor(limitRaw)))
+      : 100;
+    const page = Number.isFinite(pageRaw)
+      ? Math.max(1, Math.floor(pageRaw))
+      : 1;
+    const skip = (page - 1) * limit;
+
+    const messageId = String(req.query.messageId || "").trim();
+    const recipientId = String(req.query.recipientId || "").trim();
+    const status = String(req.query.status || "").trim();
+
+    const filter: Record<string, unknown> = {};
+    if (messageId) {
+      filter.messageId = { $regex: messageId, $options: "i" };
+    }
+    if (recipientId) {
+      filter.recipientId = { $regex: recipientId, $options: "i" };
+    }
+    if (status) {
+      filter.status = status;
+    }
+
+    const [events, total, summaryRows] = await Promise.all([
+      WebhookStatusEvent.find(filter)
+        .sort({ statusTimestamp: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      WebhookStatusEvent.countDocuments(filter),
+      WebhookStatusEvent.aggregate([
+        { $match: filter },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+    ]);
+
+    const summary = summaryRows.reduce(
+      (acc: Record<string, number>, row: any) => {
+        acc[String(row?._id || "unknown")] = Number(row?.count || 0);
+        return acc;
+      },
+      {}
+    );
+
+    return res.json({
+      events,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+      summary,
+    });
+  } catch (error: any) {
+    console.error("[Webhook Events] Failed to fetch webhook status events:", error);
+    return res.status(500).json({
+      error: "Failed to fetch webhook status events",
+      details: error?.message || "Unknown error",
+    });
+  }
+}
+
+export async function getWebhookConfig(req: Request, res: Response) {
+  try {
+    const userId = getUserId(req) || undefined;
+    const userCreds = userId
+      ? await credentialsService.getDecryptedCredentials(userId)
+      : null;
+
+    const envToken =
+      getEnvWebhookVerifyTokens()[0] || DEFAULT_VERIFY_TOKEN;
+    const verifyToken =
+      String(userCreds?.webhookVerifyToken || "").trim() || envToken;
+
+    const baseUrl = resolvePublicBaseUrl(req);
+    const callbackUrl = `${baseUrl}/api/webhook/whatsapp`;
+    const isHttps = /^https:\/\//i.test(callbackUrl);
+    const looksLocalhost = /localhost|127\.0\.0\.1/i.test(callbackUrl);
+
+    return res.json({
+      callbackUrl,
+      verifyToken,
+      hints: {
+        requiresPublicHttps: !isHttps || looksLocalhost,
+      },
+    });
+  } catch (error: any) {
+    console.error("[Webhook Config] Failed to resolve webhook config:", error);
+    return res.status(500).json({
+      error: "Failed to resolve webhook config",
+      details: error?.message || "Unknown error",
+    });
   }
 }
 

@@ -225,7 +225,7 @@ export async function getCredentialStatus(userId: string): Promise<{
     }
     
     return {
-      hasWhatsApp: !!(creds.whatsappToken && creds.phoneNumberId),
+      hasWhatsApp: !!(creds.whatsappToken && creds.phoneNumberId && creds.appId),
       hasOpenAI: !!creds.openaiApiKey,
       hasGemini: !!creds.geminiApiKey,
       hasFacebook: !!creds.facebookAccessToken,

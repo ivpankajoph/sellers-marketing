@@ -2,11 +2,15 @@ export interface Template {
   id: string;
   name: string;
   type: "marketing" | "utility" | "authentication";
+  category?: "marketing" | "utility" | "authentication";
+  status?: string;
+  metaTemplateId?: string;
 }
 
 export interface Step {
   id: string;
   templateId: string;
+  template_name?: string;
   scheduleType: "delay" | "specific";
   delayDays?: number;
   delayHours?: number;

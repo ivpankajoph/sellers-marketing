@@ -24,7 +24,8 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import Swal from "sweetalert2";
-
+import { Checkbox } from "@/components/ui/checkbox";
+import * as XLSX from "xlsx";
 
 interface Contact {
   id: string;
@@ -46,6 +47,7 @@ export default function Contacts() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [formData, setFormData] = useState({ name: "", phone: "", email: "", tags: "", notes: "" });
   const [importData, setImportData] = useState("");
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -168,6 +170,27 @@ export default function Contacts() {
     },
   });
 
+  const deleteMultipleMutation = useMutation({
+    mutationFn: async (contactsToDelete: Contact[]) => {
+      for (const contact of contactsToDelete) {
+        const isImported = contact.source === 'import' || contact.source === 'excel' || contact.source === 'csv';
+        const url = isImported 
+          ? `/api/broadcast/imported-contacts/${contact.id}`
+          : `/api/contacts/${contact.id}`;
+        await fetch(url, { method: "DELETE" });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/broadcast/imported-contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      setSelectedContactIds([]);
+      Swal.fire("Deleted!", "Selected contacts deleted successfully", "success");
+    },
+    onError: () => {
+      Swal.fire("Error!", "Failed to delete some contacts", "error");
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: async (contacts: any[]) => {
       const res = await fetch("/api/contacts/import", {
@@ -190,6 +213,79 @@ export default function Contacts() {
   });
 
   // === Handlers (unchanged) ===
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedContactIds(currentContacts.map((c) => c.id));
+    } else {
+      setSelectedContactIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedContactIds((prev) => [...prev, id]);
+    } else {
+      setSelectedContactIds((prev) => prev.filter((contactId) => contactId !== id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const result = await Swal.fire({
+      title: "Are you sure?",
+      text: `You are about to delete ${selectedContactIds.length} contacts!`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, delete them!",
+      cancelButtonText: "Cancel",
+    });
+
+    if (result.isConfirmed) {
+      const contactsToDelete = contacts.filter((c) => selectedContactIds.includes(c.id));
+      deleteMultipleMutation.mutate(contactsToDelete);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        
+        const json: any[] = XLSX.utils.sheet_to_json(ws);
+        
+        const csvLines = json.map(row => {
+            const name = row.Name || row.name || '';
+            const phone = String(row.Phone || row.phone || row['Phone Number'] || '');
+            const email = row.Email || row.email || '';
+            const tags = row.Tags || row.tags || '';
+            return `${name},${phone},${email},${tags}`;
+        }).filter(line => line.split(',')[1]);
+        
+        setImportData(csvLines.join("\n"));
+        Swal.fire("Success!", "Excel parsed successfully. Review below and click Import.", "success");
+      } catch(err) {
+        Swal.fire("Error!", "Failed to parse Excel file", "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = ''; // reset so we can upload same file again
+  };
+
+  const handleDownloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([
+      { Name: "John Doe", Phone: "+1234567890", Email: "john@example.com", Tags: "VIP;Customer" }
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "Contacts_Import_Template.xlsx");
+  };
+
   const handleAddContact = () => {
     createMutation.mutate({
       name: formData.name,
@@ -285,6 +381,20 @@ export default function Contacts() {
             <p className="text-muted-foreground">Manage your customer database and segments.</p>
           </div>
           <div className="flex gap-2">
+            {selectedContactIds.length > 0 && (
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteSelected}
+                disabled={deleteMultipleMutation.isPending}
+              >
+                {deleteMultipleMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Delete Selected ({selectedContactIds.length})
+              </Button>
+            )}
             <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline">
@@ -296,12 +406,22 @@ export default function Contacts() {
                 <DialogHeader>
                   <DialogTitle>Import Contacts</DialogTitle>
                   <DialogDescription>
-                    Paste CSV data (Name,Phone,Email,Tags). Tags separated by semicolons.
+                    Upload Excel/CSV or paste CSV data. Columns: Name, Phone, Email, Tags (semicolon separated).
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input 
+                      type="file" 
+                      accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+                      onChange={handleFileUpload} 
+                    />
+                    <Button variant="outline" onClick={handleDownloadTemplate} className="whitespace-nowrap">
+                      <Download className="mr-2 h-4 w-4" /> Template
+                    </Button>
+                  </div>
                   <Textarea
-                    placeholder="Your Name,+1234567890,john@email.com,VIP;Customer"
+                    placeholder="Or paste data here: Your Name,+1234567890,john@email.com,VIP;Customer"
                     value={importData}
                     onChange={(e) => setImportData(e.target.value)}
                     rows={6}
@@ -423,6 +543,13 @@ export default function Contacts() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox 
+                            checked={currentContacts.length > 0 && selectedContactIds.length === currentContacts.length}
+                            onCheckedChange={handleSelectAll}
+                            aria-label="Select all"
+                          />
+                        </TableHead>
                         <TableHead className="w-[250px]">Name</TableHead>
                         <TableHead>Phone Number</TableHead>
                         <TableHead>Tags</TableHead>
@@ -434,6 +561,13 @@ export default function Contacts() {
                       {currentContacts.length > 0 ? (
                         currentContacts.map((contact) => (
                           <TableRow key={contact.id}>
+                            <TableCell>
+                              <Checkbox 
+                                checked={selectedContactIds.includes(contact.id)}
+                                onCheckedChange={(checked) => handleSelectOne(contact.id, checked as boolean)}
+                                aria-label="Select contact"
+                              />
+                            </TableCell>
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-3">
                                 <Avatar className="h-8 w-8">
@@ -497,7 +631,7 @@ export default function Contacts() {
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                             No contacts found.
                           </TableCell>
                         </TableRow>

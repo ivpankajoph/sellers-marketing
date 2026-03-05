@@ -338,6 +338,7 @@ export default function SidebarNav({ onLogout }: SidebarNavProps) {
         subItems: [
           { label: "Profile Details", href: "/settings/profile" },
           { label: "Webhook & API", href: "/settings/api" },
+          { label: "Webhook Events", href: "/settings/webhook-events" },
         ],
       },
     ],

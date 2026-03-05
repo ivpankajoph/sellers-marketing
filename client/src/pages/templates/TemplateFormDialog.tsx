@@ -1,5 +1,5 @@
 // TemplateFormDialog.tsx
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,9 +19,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import ButtonEditor from "./ButtonEditor";
 import { ButtonDef, Template } from "./type";
+import { getAuthHeaders } from "@/contexts/AuthContext";
 
 interface TemplateFormDialogProps {
   open: boolean;
@@ -37,10 +38,14 @@ interface TemplateFormDialogProps {
   onCancel: () => void;
 
   // Image handling
-  headerImagePreview: string | null; // Cloudinary URL
+  headerImagePreview: string | null;
   setHeaderImagePreview: (url: string | null) => void;
-  headerMediaHandle: string | null; // Meta media handle
+  headerMediaHandle: string | null;
   setHeaderMediaHandle: (handle: string | null) => void;
+}
+
+function isHttpUrl(value?: string | null) {
+  return Boolean(value && /^https?:\/\//i.test(value));
 }
 
 export default function TemplateFormDialog({
@@ -60,22 +65,30 @@ export default function TemplateFormDialog({
   headerMediaHandle,
   setHeaderMediaHandle,
 }: TemplateFormDialogProps) {
+  const mediaInputRef = useRef<HTMLInputElement>(null);
   const isEdit = mode === "edit";
   const title = isEdit ? "Edit Template" : "Create Template";
   const submitLabel = isEdit
     ? "Save & Resubmit"
     : "Create & Submit for Approval";
 
-  // ✅ Populate image preview in edit mode
   useEffect(() => {
-    if (mode === "edit" && selectedTemplate?.previewUrl) {
-      setHeaderImagePreview(selectedTemplate.previewUrl);
-      setFormData((prev: any) => ({
-        ...prev,
-        headerImageUrl: selectedTemplate.previewUrl,
-      }));
+    if (mode !== "edit" || !selectedTemplate) {
+      return;
     }
-  }, [mode, selectedTemplate, setFormData, setHeaderImagePreview]);
+
+    // previewUrl is renderable URL; headerImageUrl is usually Meta handle.
+    const previewUrl =
+      (isHttpUrl(selectedTemplate.previewUrl)
+        ? selectedTemplate.previewUrl
+        : null) ||
+      (isHttpUrl(selectedTemplate.headerImageUrl)
+        ? selectedTemplate.headerImageUrl
+        : null);
+
+    setHeaderImagePreview(previewUrl);
+    setHeaderMediaHandle(selectedTemplate.headerImageUrl || selectedTemplate.previewUrl || null);
+  }, [mode, selectedTemplate, setHeaderImagePreview, setHeaderMediaHandle]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -103,7 +116,6 @@ export default function TemplateFormDialog({
             </Alert>
           )}
 
-          {/* Template Name + Category */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Template Name *</Label>
@@ -133,15 +145,12 @@ export default function TemplateFormDialog({
                 <SelectContent>
                   <SelectItem value="marketing">Marketing</SelectItem>
                   <SelectItem value="utility">Utility</SelectItem>
-                  <SelectItem value="authentication">
-                    Authentication
-                  </SelectItem>
+                  <SelectItem value="authentication">Authentication</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          {/* Language */}
           <div className="space-y-2">
             <Label>Language</Label>
             <Input
@@ -152,7 +161,6 @@ export default function TemplateFormDialog({
             />
           </div>
 
-          {/* Header Type */}
           <div className="space-y-2">
             <Label>Header Type</Label>
             <Select
@@ -172,7 +180,6 @@ export default function TemplateFormDialog({
             </Select>
           </div>
 
-          {/* Header Text */}
           {formData.headerType === "text" && (
             <div className="space-y-2">
               <Label>Header Text</Label>
@@ -185,11 +192,11 @@ export default function TemplateFormDialog({
             </div>
           )}
 
-          {/* Header Image */}
           {formData.headerType === "image" && (
             <div className="space-y-2">
               <Label>Header Image</Label>
               <input
+                ref={mediaInputRef}
                 type="file"
                 accept=".png,.jpg,.jpeg"
                 onChange={async (e) => {
@@ -212,6 +219,7 @@ export default function TemplateFormDialog({
                   try {
                     const res = await fetch("/api/upload/template-header", {
                       method: "POST",
+                      headers: getAuthHeaders(),
                       body: uploadData,
                     });
                     const data = await res.json();
@@ -221,17 +229,8 @@ export default function TemplateFormDialog({
                       return;
                     }
 
-                    // ✅ Meta media handle
-                    setHeaderMediaHandle(data.handle);
-
-                    // ✅ Cloudinary preview URL
-                    setHeaderImagePreview(data.previewUrl);
-
-                    // ✅ Persist for DB
-                    setFormData((prev: any) => ({
-                      ...prev,
-                      headerImageUrl: data.previewUrl,
-                    }));
+                    setHeaderMediaHandle(data.handle || null);
+                    setHeaderImagePreview(data.previewUrl || URL.createObjectURL(file));
                   } catch (err) {
                     console.error(err);
                     alert("Image upload failed");
@@ -240,35 +239,55 @@ export default function TemplateFormDialog({
                 className="block w-full text-sm text-muted-foreground"
               />
 
-              {headerImagePreview && (
-                <div className="mt-2 relative inline-block">
-                  <img
-                    src={headerImagePreview}
-                    alt="Header preview"
-                    className="max-h-32 object-contain border rounded"
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    className="absolute -top-2 -right-2 h-6 w-6"
-                    onClick={() => {
-                      setHeaderImagePreview(null);
-                      setHeaderMediaHandle(null);
-                      setFormData((prev: any) => ({
-                        ...prev,
-                        headerImageUrl: null,
-                      }));
-                    }}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+              {headerMediaHandle && (
+                <div className="space-y-2">
+                  {headerImagePreview ? (
+                    <img
+                      src={headerImagePreview}
+                      alt="Header preview"
+                      className="max-h-32 object-contain border rounded"
+                    />
+                  ) : (
+                    <div className="rounded border bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      Image is attached, but preview URL is unavailable.
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (mediaInputRef.current) {
+                          mediaInputRef.current.value = "";
+                          mediaInputRef.current.click();
+                        }
+                      }}
+                    >
+                      Change Image
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setHeaderImagePreview(null);
+                        setHeaderMediaHandle(null);
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          headerImageUrl: null,
+                        }));
+                      }}
+                    >
+                      Remove Image
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Body */}
           <div className="space-y-2">
             <Label>Message Body *</Label>
             <Textarea
@@ -280,7 +299,6 @@ export default function TemplateFormDialog({
             />
           </div>
 
-          {/* Footer */}
           <div className="space-y-2">
             <Label>Footer</Label>
             <Input

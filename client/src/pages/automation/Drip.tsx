@@ -25,10 +25,68 @@ import {
 } from "lucide-react";
 
 // --- API Helpers ---
-const fetchForms = async () => (await fetch("/api/forms")).json();
-const fetchTemplates = async () => (await fetch("/api/templates")).json();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const extractErrorMessage = async (
+  res: Response,
+  fallback: string
+): Promise<string> => {
+  const raw = await res.text().catch(() => "");
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return String(parsed?.error || parsed?.message || fallback);
+  } catch {
+    return raw;
+  }
+};
+
+const fetchForms = async () => {
+  const res = await fetch("/api/forms", { credentials: "include" });
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "Failed to fetch forms"));
+  }
+  return res.json();
+};
+
+const fetchTemplates = async () => {
+  await fetch("/api/templates/sync-meta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  }).catch(() => null);
+
+  const res = await fetch("/api/templates?metaOnly=true", {
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      await extractErrorMessage(res, "Failed to fetch templates")
+    );
+  }
+
+  const data = await res.json();
+  const normalized = (Array.isArray(data) ? data : [])
+    .map((tpl: any) => ({
+      ...tpl,
+      id: String(tpl.id || tpl._id || tpl.metaTemplateId || tpl.name),
+      status: String(tpl.status || "").toLowerCase(),
+    }))
+    .filter((tpl: any) => tpl.status === "approved");
+
+  return Array.from(
+    new Map(normalized.map((tpl: any) => [String(tpl.name).toLowerCase(), tpl]))
+      .values()
+  );
+};
 const fetchDripCampaigns = async () =>
-  (await fetch("/api/drip-campaigns")).json();
+  (
+    await fetch("/api/drip-campaigns", {
+      credentials: "include",
+    })
+  ).json();
 
 interface DripStep {
   id: string;
@@ -86,12 +144,43 @@ export default function DripCampaignManager() {
   // Mutations
   const createCampaignMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const res = await fetch("/api/drip-campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed to create campaign");
+      let res: Response | null = null;
+      let lastNetworkError: unknown = null;
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await fetch("/api/drip-campaigns", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(payload),
+          });
+          break;
+        } catch (networkError) {
+          lastNetworkError = networkError;
+          if (attempt < 1) {
+            await sleep(300);
+            continue;
+          }
+        }
+      }
+
+      if (!res) {
+        const networkMessage =
+          lastNetworkError instanceof Error
+            ? lastNetworkError.message
+            : "Unable to reach server";
+        throw new Error(
+          `${networkMessage}. Please verify backend is running and retry.`
+        );
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          await extractErrorMessage(res, "Failed to create campaign")
+        );
+      }
+
       return res.json();
     },
     onSuccess: () => {
@@ -125,9 +214,14 @@ export default function DripCampaignManager() {
       const res = await fetch(`/api/drip-campaigns/${campaignId}/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ is_active: isActive }),
       });
-      if (!res.ok) throw new Error("Failed to update campaign status");
+      if (!res.ok) {
+        throw new Error(
+          await extractErrorMessage(res, "Failed to update campaign status")
+        );
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -146,8 +240,13 @@ export default function DripCampaignManager() {
     mutationFn: async (campaignId: string) => {
       const res = await fetch(`/api/drip-campaigns/${campaignId}`, {
         method: "DELETE",
+        credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to delete campaign");
+      if (!res.ok) {
+        throw new Error(
+          await extractErrorMessage(res, "Failed to delete campaign")
+        );
+      }
       return res.json();
     },
     onSuccess: () => {

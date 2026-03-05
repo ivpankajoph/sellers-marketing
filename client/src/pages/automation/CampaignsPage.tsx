@@ -10,10 +10,13 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import Swal from "sweetalert2";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Campaign, Step, Template } from "./helper";
 
 const API_BASE = "/api";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function DripCampaignApp() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -52,10 +55,44 @@ export default function DripCampaignApp() {
 
   const fetchTemplates = async () => {
     try {
-      const response = await fetch(`${API_BASE}/templates`);
+      // Sync first so deleted Meta templates are removed from local cache.
+      await fetch(`${API_BASE}/templates/sync-meta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }).catch(() => null);
+
+      const response = await fetch(`${API_BASE}/templates?metaOnly=true`);
       if (!response.ok) throw new Error("Failed to fetch templates");
       const data = await response.json();
-      setTemplates(data);
+
+      const normalized = (Array.isArray(data) ? data : [])
+        .map((tpl: any) => {
+          const category = String(
+            tpl.type || tpl.category || tpl.templateType || "utility"
+          ).toLowerCase();
+          const type =
+            category === "marketing" ||
+            category === "authentication" ||
+            category === "utility"
+              ? category
+              : "utility";
+
+          return {
+            ...tpl,
+            type,
+            category: type,
+            status: String(tpl.status || "").toLowerCase(),
+          } as Template;
+        })
+        .filter((tpl: Template) => tpl.status === "approved");
+
+      const dedupedByName = Array.from(
+        new Map(
+          normalized.map((tpl: Template) => [tpl.name.toLowerCase(), tpl])
+        ).values()
+      );
+
+      setTemplates(dedupedByName);
     } catch (error) {
       console.error("Error fetching templates:", error);
       setErrors("Failed to load message templates.");
@@ -65,7 +102,7 @@ export default function DripCampaignApp() {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.group("📂 Excel Upload Debug");
+    console.group("Excel Upload Debug");
 
     setErrors(null);
     const file = e.target.files?.[0];
@@ -133,7 +170,7 @@ export default function DripCampaignApp() {
         console.log("Phone column index:", phoneColIndex);
 
         if (whatsappColIndex === -1 && phoneColIndex === -1) {
-          setErrors(
+          void showErrorAlert(
             "No 'WhatsApp number' or 'Phone' column found. Please ensure your Excel file has one of these columns."
           );
           console.error("Required columns not found");
@@ -189,13 +226,13 @@ export default function DripCampaignApp() {
 
           if (cleanNumber.length === 10) {
             extractedContacts.push("91" + cleanNumber);
-            console.log(`Row ${i} accepted →`, "91" + cleanNumber);
+            console.log(`Row ${i} accepted ->`, "91" + cleanNumber);
           } else if (
             cleanNumber.length === 12 &&
             cleanNumber.startsWith("91")
           ) {
             extractedContacts.push(cleanNumber);
-            console.log(`Row ${i} accepted →`, cleanNumber);
+            console.log(`Row ${i} accepted ->`, cleanNumber);
           } else {
             console.warn(`Row ${i} rejected (invalid length):`, cleanNumber);
           }
@@ -205,7 +242,7 @@ export default function DripCampaignApp() {
         console.log("Total valid contacts:", extractedContacts.length);
 
         if (extractedContacts.length === 0) {
-          setErrors(
+          void showErrorAlert(
             "No valid WhatsApp numbers found. Ensure your 'WhatsApp number' or 'Phone' column contains 10-digit numbers."
           );
           console.error("No valid numbers extracted");
@@ -218,7 +255,7 @@ export default function DripCampaignApp() {
         console.log("Upload successful");
       } catch (err) {
         console.error("File parsing error:", err);
-        setErrors(
+        void showErrorAlert(
           "Invalid file format. Please upload a valid Excel (.xlsx/.xls) or CSV file."
         );
       } finally {
@@ -246,36 +283,82 @@ export default function DripCampaignApp() {
     );
   };
 
+  const updateStepTemplate = (id: string, templateId: string) => {
+    const selectedTemplate = templates.find((tpl) => tpl.id === templateId);
+    setSteps(
+      steps.map((step) =>
+        step.id === id
+          ? {
+              ...step,
+              templateId,
+              template_name: selectedTemplate?.name || step.template_name || "",
+            }
+          : step
+      )
+    );
+  };
+
   const removeStep = (id: string) => {
     setSteps(steps.filter((step) => step.id !== id));
+  };
+
+  const showErrorAlert = async (message: string) => {
+    setErrors(message);
+    await Swal.fire({
+      icon: "error",
+      title: "Action Required",
+      text: message,
+      confirmButtonText: "OK",
+    });
+  };
+
+  const downloadContactsTemplate = () => {
+    const sampleRows = [
+      { "WhatsApp number": "9876543210", Name: "Customer 1" },
+      { "WhatsApp number": "9123456789", Name: "Customer 2" },
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Contacts");
+    XLSX.writeFile(workbook, "drip_contacts_template.xlsx");
   };
 
   const saveCampaign = async () => {
     setErrors(null);
 
     if (!campaignName.trim()) {
-      setErrors("Campaign name is required.");
+      await showErrorAlert("Campaign name is required.");
       return;
     }
     if (steps.length === 0) {
-      setErrors("At least one campaign step is required.");
+      await showErrorAlert("At least one campaign step is required.");
       return;
     }
     if (contacts.length === 0) {
-      setErrors("Please upload a valid contacts file.");
+      await showErrorAlert("Please upload a valid contacts file.");
       return;
     }
 
     for (const step of steps) {
       if (!step.templateId) {
-        setErrors("Please select a template for all steps.");
+        await showErrorAlert("Please select a template for all steps.");
         return;
       }
 
       if (step.scheduleType === "specific") {
         if (!step.specificDate || !step.specificTime) {
-          setErrors(
+          await showErrorAlert(
             "Please set date and time for all 'Specific' schedule steps."
+          );
+          return;
+        }
+
+        const specificAt = new Date(
+          `${step.specificDate}T${step.specificTime}:00`
+        );
+        if (Number.isNaN(specificAt.getTime()) || specificAt <= new Date()) {
+          await showErrorAlert(
+            `Step ${steps.indexOf(step) + 1} specific date/time must be in the future.`
           );
           return;
         }
@@ -290,18 +373,52 @@ export default function DripCampaignApp() {
     };
 
     try {
-      const response = await fetch(`${API_BASE}/drip-campaigns`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(campaign),
-      });
+      let response: Response | null = null;
+      let lastNetworkError: unknown = null;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to save campaign");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await fetch(`${API_BASE}/drip-campaigns`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(campaign),
+          });
+          break;
+        } catch (networkError) {
+          lastNetworkError = networkError;
+          if (attempt < 1) {
+            await sleep(300);
+            continue;
+          }
+        }
       }
 
-      const data = await response.json();
+      if (!response) {
+        const message =
+          lastNetworkError instanceof Error
+            ? lastNetworkError.message
+            : "Unable to reach server";
+        throw new Error(
+          `${message}. Please verify backend is running and retry.`
+        );
+      }
+
+      if (!response.ok) {
+        const raw = await response.text().catch(() => "");
+        let parsed: any = null;
+        try {
+          parsed = raw ? JSON.parse(raw) : null;
+        } catch {
+          parsed = null;
+        }
+
+        const backendError =
+          parsed?.error || parsed?.message || raw || "Failed to save campaign";
+        throw new Error(String(backendError));
+      }
+
+      const data = await response.json().catch(() => ({}));
       const normalized = {
         ...data,
         contacts: Array.isArray(data.contacts) ? data.contacts : [],
@@ -309,9 +426,18 @@ export default function DripCampaignApp() {
       };
       setCampaigns([...campaigns, normalized]);
       resetForm();
+      await Swal.fire({
+        icon: "success",
+        title: "Campaign Created",
+        text: "Drip campaign created successfully.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
     } catch (error: any) {
       console.error("Error saving campaign:", error);
-      setErrors(error.message || "An unexpected error occurred while saving.");
+      await showErrorAlert(
+        error.message || "An unexpected error occurred while saving."
+      );
     }
   };
 
@@ -331,14 +457,29 @@ export default function DripCampaignApp() {
       setCampaigns(
         campaigns.map((c) => (c._id === _id ? { ...c, ...data } : c))
       );
+      await Swal.fire({
+        icon: "success",
+        title: action === "start" ? "Campaign Started" : "Campaign Paused",
+        timer: 1200,
+        showConfirmButton: false,
+      });
     } catch (error) {
       console.error("Error updating campaign:", error);
-      setErrors("Failed to update campaign status.");
+      await showErrorAlert("Failed to update campaign status.");
     }
   };
 
   const deleteCampaign = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this campaign?")) return;
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Delete campaign?",
+      text: "This action cannot be undone.",
+      showCancelButton: true,
+      confirmButtonText: "Yes, delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#d33",
+    });
+    if (!confirm.isConfirmed) return;
 
     try {
       const response = await fetch(`${API_BASE}/drip-campaigns/${id}`, {
@@ -346,9 +487,16 @@ export default function DripCampaignApp() {
       });
       if (!response.ok) throw new Error("Deletion failed");
       setCampaigns(campaigns.filter((c) => c._id !== id)); // Use _id consistently
+      await Swal.fire({
+        icon: "success",
+        title: "Deleted",
+        text: "Campaign deleted successfully.",
+        timer: 1400,
+        showConfirmButton: false,
+      });
     } catch (error) {
       console.error("Error deleting campaign:", error);
-      setErrors("Failed to delete campaign.");
+      await showErrorAlert("Failed to delete campaign.");
     }
   };
 
@@ -386,9 +534,15 @@ export default function DripCampaignApp() {
     return today.toISOString().split("T")[0];
   };
 
-  const getTemplateName = (templateId: string) => {
-    const template = templates.find((t) => t.id === templateId);
-    return template ? `${template.name} (${template.type})` : "—";
+  const getTemplateName = (step: Step) => {
+    const template = templates.find((t) => t.id === step.templateId);
+    if (template) {
+      return `${template.name} (${template.category || template.type})`;
+    }
+    if (step.template_name) {
+      return step.template_name;
+    }
+    return step.templateId || "-";
   };
 
   return (
@@ -440,9 +594,18 @@ export default function DripCampaignApp() {
                 </div>
 
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Upload Contacts (Excel)
-                  </label>
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Upload Contacts (Excel)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={downloadContactsTemplate}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    >
+                      Download Template
+                    </button>
+                  </div>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 px-3 py-2 bg-white border border-dashed border-gray-300 rounded-md cursor-pointer hover:border-gray-400">
                       <FileSpreadsheet size={16} className="text-gray-500" />
@@ -503,18 +666,14 @@ export default function DripCampaignApp() {
                               <select
                                 value={step.templateId}
                                 onChange={(e) =>
-                                  updateStep(
-                                    step.id,
-                                    "templateId",
-                                    e.target.value
-                                  )
+                                  updateStepTemplate(step.id, e.target.value)
                                 }
                                 className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
                               >
-                                <option value="">— Select Template —</option>
+                                <option value="">-- Select Template --</option>
                                 {templates.map((tpl) => (
                                   <option key={tpl.id} value={tpl.id}>
-                                    {tpl.name} ({tpl.type})
+                                    {tpl.name} ({tpl.category || tpl.type})
                                   </option>
                                 ))}
                               </select>
@@ -744,7 +903,7 @@ export default function DripCampaignApp() {
                                 {idx + 1}
                               </span>
                               <span className="font-medium text-gray-900">
-                                {getTemplateName(step.templateId)}
+                                {getTemplateName(step)}
                               </span>
                               <span className="text-gray-600 flex items-center gap-1">
                                 {step.scheduleType === "specific" ? (

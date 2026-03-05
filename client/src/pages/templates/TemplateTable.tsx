@@ -14,12 +14,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Copy, Edit, Trash2, Send } from "lucide-react";
+import { MoreHorizontal, Copy, Edit, Trash2, Send, Loader2 } from "lucide-react";
 import { Template } from "./type";
 
 interface TemplateTableProps {
   templates: Template[];
   isLoading: boolean;
+  selectedTemplateIds: Set<string>;
+  allSelected: boolean;
+  deletePending: boolean;
+  deletingTemplateId: string | null;
+  onToggleSelectAll: () => void;
+  onToggleTemplateSelection: (id: string) => void;
   onCopy: (content: string) => void;
   onEdit: (template: Template) => void;
   onDelete: (id: string) => void;
@@ -30,6 +36,12 @@ interface TemplateTableProps {
 export default function TemplateTable({
   templates,
   isLoading,
+  selectedTemplateIds,
+  allSelected,
+  deletePending,
+  deletingTemplateId,
+  onToggleSelectAll,
+  onToggleTemplateSelection,
   onCopy,
   onEdit,
   onDelete,
@@ -73,6 +85,16 @@ export default function TemplateTable({
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-10">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={onToggleSelectAll}
+              disabled={deletePending}
+              aria-label="Select all templates"
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </TableHead>
           <TableHead>Name</TableHead>
           <TableHead>Category</TableHead>
           <TableHead>Language</TableHead>
@@ -87,6 +109,16 @@ export default function TemplateTable({
           const status = template.metaStatus?.toLowerCase() || template.status;
           return (
             <TableRow key={template.id}>
+              <TableCell className="w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedTemplateIds.has(template.id)}
+                  onChange={() => onToggleTemplateSelection(template.id)}
+                  disabled={deletePending}
+                  aria-label={`Select ${template.name}`}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+              </TableCell>
               <TableCell className="font-medium">{template.name}</TableCell>
               <TableCell>
                 <Badge variant="outline" className="capitalize">
@@ -123,36 +155,43 @@ export default function TemplateTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onSubmitForApproval(template.id)}
-                      disabled={submitApprovalPending}
+                      disabled={submitApprovalPending || deletePending}
                     >
                       <Send className="mr-1 h-3 w-3" />
                       Submit
                     </Button>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onCopy(template.content)}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Content
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onEdit(template)}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => onDelete(template.id)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {deletePending && deletingTemplateId === template.id ? (
+                    <div className="inline-flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      Deleting...
+                    </div>
+                  ) : (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" disabled={deletePending}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onCopy(template.content)}>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copy Content
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onEdit(template)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => onDelete(template.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

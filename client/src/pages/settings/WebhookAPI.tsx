@@ -24,6 +24,7 @@ export default function IntegrationsForm() {
     GEMINI_API_KEY: "",
     FB_PAGE_ID: "",
     FB_PAGE_ACCESS_TOKEN: "",
+    META_APP_ID: "",
     PHONE_NUMBER_ID: "",
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: "",
     WABA_ID: "",
@@ -91,6 +92,7 @@ export default function IntegrationsForm() {
       geminiApiKey: form.GEMINI_API_KEY.trim() || undefined,
       facebookPageId: form.FB_PAGE_ID.trim() || undefined,
       facebookAccessToken: form.FB_PAGE_ACCESS_TOKEN.trim() || undefined,
+      appId: form.META_APP_ID.trim() || undefined,
       phoneNumberId: form.PHONE_NUMBER_ID.trim() || undefined,
       webhookVerifyToken: form.WHATSAPP_WEBHOOK_VERIFY_TOKEN.trim() || undefined,
       businessAccountId: form.WABA_ID.trim() || undefined,
@@ -121,6 +123,7 @@ export default function IntegrationsForm() {
           GEMINI_API_KEY: "",
           FB_PAGE_ID: "",
           FB_PAGE_ACCESS_TOKEN: "",
+          META_APP_ID: "",
           PHONE_NUMBER_ID: "",
           WHATSAPP_WEBHOOK_VERIFY_TOKEN: "",
           WABA_ID: "",
@@ -164,6 +167,12 @@ export default function IntegrationsForm() {
       label: "Facebook Page Access Token",
       helper:
         "Permanent access token for your Facebook Page. Generate in Business Settings.",
+      group: "WHATSAPP",
+    },
+    META_APP_ID: {
+      label: "Meta App ID",
+      helper:
+        "Required for media upload to WhatsApp templates. Find it in Meta App Dashboard.",
       group: "WHATSAPP",
     },
     PHONE_NUMBER_ID: {

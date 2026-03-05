@@ -9,6 +9,7 @@ export interface ICampaignContact {
   sentAt?: Date;
   deliveredAt?: Date;
   readAt?: Date;
+  failedAt?: Date;
   replied: boolean;
   repliedAt?: Date;
   replyText?: string;
@@ -58,6 +59,7 @@ const CampaignContactSchema = new Schema({
   sentAt: { type: Date },
   deliveredAt: { type: Date },
   readAt: { type: Date },
+  failedAt: { type: Date },
   replied: { type: Boolean, default: false },
   repliedAt: { type: Date },
   replyText: { type: String },

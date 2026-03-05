@@ -17,6 +17,15 @@ import {
   startScheduler as startBroadcastScheduler,
 } from "./modules/broadcast/broadcast.service";
 
+const APP_TIMEZONE = process.env.APP_TIMEZONE || process.env.TZ || "Asia/Kolkata";
+process.env.TZ = process.env.TZ || APP_TIMEZONE;
+const DRIP_STEP_RETRY_INTERVAL_MS = Number(
+  process.env.DRIP_STEP_RETRY_INTERVAL_MS || 60_000
+);
+const DRIP_STEP_MAX_ATTEMPTS = Number(
+  process.env.DRIP_STEP_MAX_ATTEMPTS || 3
+);
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -30,17 +39,80 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: "5mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   })
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "5mb" }));
 
 /* -------------------- BACKGROUND JOBS -------------------- */
 
 let cronJobsStarted = false;
+
+function getStepDelayMs(step: any): number {
+  const delayDays = Number(step?.delayDays ?? 0);
+  const delayHours = Number(step?.delayHours ?? 0);
+  const delayValue = Number(step?.delay_value ?? 0);
+  const delayUnit = step?.delay_unit;
+
+  let totalHours =
+    (Number.isFinite(delayDays) ? delayDays : 0) * 24 +
+    (Number.isFinite(delayHours) ? delayHours : 0);
+
+  if (Number.isFinite(delayValue) && delayValue > 0) {
+    if (delayUnit === "minutes") {
+      totalHours += delayValue / 60;
+    } else if (delayUnit === "hours") {
+      totalHours += delayValue;
+    } else if (delayUnit === "days") {
+      totalHours += delayValue * 24;
+    }
+  }
+
+  return Math.max(0, totalHours * 60 * 60 * 1000);
+}
+
+function parseSpecificStepDateTime(step: any): Date | null {
+  if (!step?.specificDate || !step?.specificTime) return null;
+  const specific = new Date(`${step.specificDate}T${step.specificTime}:00`);
+  if (Number.isNaN(specific.getTime())) return null;
+  return specific;
+}
+
+function isStepSuccessStatus(status: unknown): boolean {
+  const normalized = String(status || "").toLowerCase();
+  return (
+    normalized === "accepted" ||
+    normalized === "sent" ||
+    normalized === "delivered" ||
+    normalized === "read"
+  );
+}
+
+function calculateCampaignNextRunAt(step: any, baseDate: Date = new Date()): Date {
+  const specific = parseSpecificStepDateTime(step);
+  if (step?.scheduleType === "specific" && specific) {
+    return specific;
+  }
+
+  const nextRunAt = new Date(baseDate.getTime() + getStepDelayMs(step));
+  const preferredTime = step?.specificTime || step?.send_at_time;
+
+  if (preferredTime) {
+    const [hours, minutes] = String(preferredTime).split(":").map(Number);
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      nextRunAt.setHours(hours, minutes, 0, 0);
+      if (nextRunAt < baseDate) {
+        nextRunAt.setDate(nextRunAt.getDate() + 1);
+      }
+    }
+  }
+
+  return nextRunAt;
+}
 
 function startMongoCronJobs(): void {
   if (cronJobsStarted) {
@@ -50,32 +122,36 @@ function startMongoCronJobs(): void {
   cronJobsStarted = true;
   let formSyncRunning = false;
 
-  cron.schedule("*/40 * * * * *", async () => {
-    if (formSyncRunning) {
-      console.log("[FormSync] Skipping run: previous sync is still in progress");
-      return;
-    }
-
-    formSyncRunning = true;
-
-    try {
-      console.log("[FormSync] Running form automation sync");
-
-      const automations = await FormAutomation.find({
-        automation_active: true,
-      });
-
-      for (const automation of automations) {
-        await syncLeadsForFormMain(automation);
+  cron.schedule(
+    "*/40 * * * * *",
+    async () => {
+      if (formSyncRunning) {
+        console.log("[FormSync] Skipping run: previous sync is still in progress");
+        return;
       }
 
-      console.log(`[FormSync] Synced ${automations.length} forms`);
-    } catch (err) {
-      console.error("[FormSync] Error:", err);
-    } finally {
-      formSyncRunning = false;
-    }
-  });
+      formSyncRunning = true;
+
+      try {
+        console.log("[FormSync] Running form automation sync");
+
+        const automations = await FormAutomation.find({
+          automation_active: true,
+        });
+
+        for (const automation of automations) {
+          await syncLeadsForFormMain(automation);
+        }
+
+        console.log(`[FormSync] Synced ${automations.length} forms`);
+      } catch (err) {
+        console.error("[FormSync] Error:", err);
+      } finally {
+        formSyncRunning = false;
+      }
+    },
+    { timezone: APP_TIMEZONE }
+  );
 
   const STUCK_TIMEOUT_MIN = 10;
 
@@ -87,7 +163,7 @@ function startMongoCronJobs(): void {
       try {
         console.log(
           "\n[CRON] Drip job @",
-          now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+          now.toLocaleString("en-IN", { timeZone: APP_TIMEZONE })
         );
 
         await Campaign.updateMany(
@@ -103,7 +179,13 @@ function startMongoCronJobs(): void {
         const campaignIds = await Campaign.find(
           {
             status: "running",
+            is_active: { $ne: false },
             isProcessing: false,
+            $or: [
+              { nextRunAt: { $lte: now } },
+              { nextRunAt: { $exists: false } },
+              { nextRunAt: null },
+            ],
           },
           { _id: 1 }
         );
@@ -117,7 +199,17 @@ function startMongoCronJobs(): void {
 
         for (const { _id } of campaignIds) {
           const campaign = await Campaign.findOneAndUpdate(
-            { _id, isProcessing: false },
+            {
+              _id,
+              isProcessing: false,
+              status: "running",
+              is_active: { $ne: false },
+              $or: [
+                { nextRunAt: { $lte: now } },
+                { nextRunAt: { $exists: false } },
+                { nextRunAt: null },
+              ],
+            },
             {
               $set: {
                 isProcessing: true,
@@ -142,61 +234,257 @@ function startMongoCronJobs(): void {
               continue;
             }
 
+            // Strict guard for exact "specific date & time" steps.
+            // Even if nextRunAt is stale, never send before configured time.
+            const stepSpecificRunAt = parseSpecificStepDateTime(step);
+            if (
+              step.scheduleType === "specific" &&
+              stepSpecificRunAt &&
+              now < stepSpecificRunAt
+            ) {
+              campaign.nextRunAt = stepSpecificRunAt;
+              console.log(
+                `[CAMPAIGN] Step ${campaign.currentStep + 1} not due yet. Scheduled for ${stepSpecificRunAt.toISOString()}`
+              );
+              continue;
+            }
+
+            let stepAcceptedCount = 0;
+            let stepFailedCount = 0;
+
             await parallelLimit(campaign.contacts, 5, async (contact: any) => {
+              const normalizedContact = String(contact || "").trim();
+              const templateCandidates = Array.from(
+                new Set(
+                  [step.templateId, step.template_id, step.template_name]
+                    .map((value) => String(value || "").trim())
+                    .filter(Boolean)
+                )
+              );
+              let previousAttemptCount = 0;
+
               try {
+                const previousStepIndex = campaign.currentStep - 1;
+                if (previousStepIndex >= 0) {
+                  const previousSuccess = await CampaignLog.findOne({
+                    campaignId: campaign._id,
+                    stepIndex: previousStepIndex,
+                    contact: normalizedContact,
+                    status: { $in: ["accepted", "sent", "delivered", "read"] },
+                  }).lean();
+
+                  if (!previousSuccess) {
+                    await CampaignLog.updateOne(
+                      {
+                        campaignId: campaign._id,
+                        stepIndex: campaign.currentStep,
+                        contact: normalizedContact,
+                      },
+                      {
+                        $set: {
+                          templateName:
+                            String(step.template_name || "").trim() ||
+                            templateCandidates[0] ||
+                            "",
+                          status: "failed",
+                          providerStatus: "skipped_previous_step_failed",
+                          failedAt: new Date(),
+                          error:
+                            "Skipped because previous step did not complete successfully",
+                          attemptCount: DRIP_STEP_MAX_ATTEMPTS,
+                        },
+                      },
+                      { upsert: true }
+                    );
+                    stepFailedCount++;
+                    console.warn(
+                      `[SEND] Skipped ${normalizedContact} on step ${campaign.currentStep + 1}: previous step not successful`
+                    );
+                    return;
+                  }
+                }
+
                 const exists = await CampaignLog.findOne({
                   campaignId: campaign._id,
                   stepIndex: campaign.currentStep,
-                  contact,
-                });
+                  contact: normalizedContact,
+                }).lean();
+                previousAttemptCount = Number(exists?.attemptCount || 0);
 
-                if (exists) return;
-                console.log("contact is", contact, step.template_name);
+                // Skip already successful sends; failed attempts may be retried.
+                if (exists && exists.status !== "failed") return;
+                if (
+                  exists?.status === "failed" &&
+                  previousAttemptCount >= DRIP_STEP_MAX_ATTEMPTS
+                ) {
+                  stepFailedCount++;
+                  console.warn(
+                    `[SEND] Max retries reached for ${normalizedContact} on step ${campaign.currentStep + 1}`
+                  );
+                  return;
+                }
+                console.log("contact is", normalizedContact, step.template_name);
+
+                if (templateCandidates.length === 0) {
+                  throw new Error("Template reference missing on campaign step");
+                }
 
                 const templatedetail = await Template.findOne({
-                  id: step.templateId,
+                  $or: templateCandidates.flatMap((candidate) => [
+                    { id: candidate },
+                    { name: candidate },
+                  ]),
                 });
                 if (!templatedetail) {
-                  throw new Error("Template not found");
+                  throw new Error(
+                    `Template not found for step reference: ${templateCandidates.join(
+                      ", "
+                    )}`
+                  );
                 }
 
                 const template_name = templatedetail.name;
-                await retry(() => sendTemplateMessage(contact, template_name));
+                const sendResult = await retry(() =>
+                  sendTemplateMessage(normalizedContact, template_name, undefined, {
+                    allowLanguageFallback: false,
+                  })
+                );
 
-                await CampaignLog.create({
-                  campaignId: campaign._id,
-                  stepIndex: campaign.currentStep,
-                  contact,
-                  sentAt: new Date(),
-                });
+                if (!sendResult?.success) {
+                  throw new Error(sendResult?.error || "Template send failed");
+                }
 
-                console.log(`[SEND] Sent to ${contact}`);
+                const providerStatus = String(
+                  sendResult.provider_status || "accepted"
+                );
+                const normalizedStatus =
+                  providerStatus === "read"
+                    ? "read"
+                    : providerStatus === "delivered"
+                    ? "delivered"
+                    : "accepted";
+
+                await CampaignLog.updateOne(
+                  {
+                    campaignId: campaign._id,
+                    stepIndex: campaign.currentStep,
+                    contact: normalizedContact,
+                  },
+                  {
+                    $set: {
+                      templateName: template_name,
+                      messageId: sendResult.messageId || undefined,
+                      status: normalizedStatus,
+                      providerStatus,
+                      sentAt: new Date(),
+                      failedAt: null,
+                      error: null,
+                      attemptCount: previousAttemptCount + 1,
+                    },
+                  },
+                  { upsert: true }
+                );
+                stepAcceptedCount++;
+
+                console.log(
+                  `[SEND] ${providerStatus} to ${normalizedContact} | messageId=${sendResult.messageId || "n/a"}`
+                );
               } catch (err) {
-                console.error(`[SEND ERROR]`, contact, err);
+                const errorMessage =
+                  err instanceof Error ? err.message : "Unknown send error";
+
+                await CampaignLog.updateOne(
+                  {
+                    campaignId: campaign._id,
+                    stepIndex: campaign.currentStep,
+                    contact: normalizedContact,
+                  },
+                  {
+                    $set: {
+                      templateName:
+                        String(step.template_name || "").trim() ||
+                        templateCandidates[0] ||
+                        "",
+                      status: "failed",
+                      providerStatus: "failed",
+                      failedAt: new Date(),
+                      error: errorMessage,
+                      attemptCount: previousAttemptCount + 1,
+                    },
+                  },
+                  { upsert: true }
+                );
+                stepFailedCount++;
+
+                console.error(`[SEND ERROR]`, normalizedContact, errorMessage);
               }
             });
 
-            campaign.currentStep++;
+            const stepLogs = await CampaignLog.find({
+              campaignId: campaign._id,
+              stepIndex: campaign.currentStep,
+            }).lean();
 
-            const nextStep = campaign.steps[campaign.currentStep];
-
-            if (!nextStep) {
-              campaign.status = "completed";
-            } else if (nextStep.scheduleType === "specific") {
-              campaign.nextRunAt = new Date(
-                `${nextStep.specificDate}T${nextStep.specificTime}:00+05:30`
+            const contactStates = (campaign.contacts || []).map((rawContact: any) => {
+              const normalizedContact = String(rawContact || "").trim();
+              const log = stepLogs.find(
+                (row: any) => String(row.contact || "") === normalizedContact
               );
-            } else {
-              const delayMs =
-                (nextStep.delayDays * 24 + nextStep.delayHours) *
-                60 *
-                60 *
-                1000;
-
-              campaign.nextRunAt = new Date(
-                campaign.nextRunAt.getTime() + delayMs
+              const success = Boolean(log && isStepSuccessStatus(log.status));
+              const terminalFail = Boolean(
+                log &&
+                  String(log.status) === "failed" &&
+                  Number(log.attemptCount || 0) >= DRIP_STEP_MAX_ATTEMPTS
               );
+              return { normalizedContact, success, terminalFail };
+            });
+
+            const successfulContacts = contactStates.filter(
+              (state: { normalizedContact: string; success: boolean; terminalFail: boolean }) =>
+                state.success
+            );
+            const terminalFailedContacts = contactStates.filter(
+              (state: { normalizedContact: string; success: boolean; terminalFail: boolean }) =>
+                state.terminalFail
+            );
+            const pendingContacts = contactStates.filter(
+              (state: { normalizedContact: string; success: boolean; terminalFail: boolean }) =>
+                !state.success && !state.terminalFail
+            );
+
+            if (pendingContacts.length === 0) {
+              campaign.currentStep++;
+
+              const nextStep = campaign.steps[campaign.currentStep];
+
+              if (!nextStep) {
+                campaign.status = "completed";
+                campaign.is_active = false;
+                campaign.nextRunAt = null;
+              } else {
+                campaign.nextRunAt = calculateCampaignNextRunAt(nextStep, now);
+              }
+              continue;
             }
+
+            if (
+              successfulContacts.length === 0 &&
+              terminalFailedContacts.length === contactStates.length
+            ) {
+              campaign.status = "failed";
+              campaign.is_active = false;
+              campaign.nextRunAt = null;
+              console.error(
+                `[CAMPAIGN] Marked failed: step ${campaign.currentStep + 1} has terminal contact failures`
+              );
+              continue;
+            }
+
+            // Keep campaign on same step and retry failed contacts shortly.
+            campaign.nextRunAt = new Date(now.getTime() + DRIP_STEP_RETRY_INTERVAL_MS);
+            console.log(
+              `[CAMPAIGN] Step ${campaign.currentStep + 1} partially sent (${successfulContacts.length}/${campaign.contacts.length}). Retrying failed contacts at ${campaign.nextRunAt.toISOString()}`
+            );
           } catch (err) {
             console.error(`[CAMPAIGN ERROR] ${campaign._id}`, err);
           } finally {
@@ -214,7 +502,7 @@ function startMongoCronJobs(): void {
         console.error("[CRON] Fatal drip error:", err);
       }
     },
-    { timezone: "Asia/Kolkata" }
+    { timezone: APP_TIMEZONE }
   );
 
   console.log("[Cron] Background cron jobs started");
@@ -257,7 +545,13 @@ async function runPostListenStartupTasks(): Promise<void> {
      ===================================================== */
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || 500;
+    const status = err.status || err.statusCode || 500;
+    if (status === 413) {
+      return res.status(413).json({
+        message:
+          "Request payload too large. Please reduce contacts or split into smaller campaign batches.",
+      });
+    }
     res.status(status).json({ message: err.message || "Server Error" });
   });
 
@@ -287,6 +581,7 @@ async function runPostListenStartupTasks(): Promise<void> {
       httpServer.off("listening", onListening);
       console.log(`[Startup] Server running on http://localhost:${port}`);
       console.log(`[Startup] Bound host ${bindHost}:${port}`);
+      console.log(`[Startup] Timezone: ${process.env.TZ}`);
       void runPostListenStartupTasks();
     };
 

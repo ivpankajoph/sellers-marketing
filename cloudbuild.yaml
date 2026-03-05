@@ -21,7 +21,7 @@ steps:
       - '--min-instances=0'
       - '--max-instances=10'
       - '--timeout=300'
-      - '--set-env-vars=NODE_ENV=production'
+      - '--set-env-vars=NODE_ENV=production,TZ=Asia/Kolkata,APP_TIMEZONE=Asia/Kolkata'
 
 substitutions:
   _SERVICE_NAME: 'ophmarketing'
