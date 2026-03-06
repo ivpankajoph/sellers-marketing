@@ -25,6 +25,10 @@ const DRIP_STEP_RETRY_INTERVAL_MS = Number(
 const DRIP_STEP_MAX_ATTEMPTS = Number(
   process.env.DRIP_STEP_MAX_ATTEMPTS || 3
 );
+const DRIP_REQUIRE_PREVIOUS_STEP_SUCCESS =
+  String(process.env.DRIP_REQUIRE_PREVIOUS_STEP_SUCCESS || "false")
+    .trim()
+    .toLowerCase() === "true";
 
 const app = express();
 const httpServer = createServer(app);
@@ -264,43 +268,47 @@ function startMongoCronJobs(): void {
               let previousAttemptCount = 0;
 
               try {
-                const previousStepIndex = campaign.currentStep - 1;
-                if (previousStepIndex >= 0) {
-                  const previousSuccess = await CampaignLog.findOne({
-                    campaignId: campaign._id,
-                    stepIndex: previousStepIndex,
-                    contact: normalizedContact,
-                    status: { $in: ["accepted", "sent", "delivered", "read"] },
-                  }).lean();
+                // By default, every step is sent to every contact regardless of previous step result.
+                // Set DRIP_REQUIRE_PREVIOUS_STEP_SUCCESS=true to enforce strict step chaining.
+                if (DRIP_REQUIRE_PREVIOUS_STEP_SUCCESS) {
+                  const previousStepIndex = campaign.currentStep - 1;
+                  if (previousStepIndex >= 0) {
+                    const previousSuccess = await CampaignLog.findOne({
+                      campaignId: campaign._id,
+                      stepIndex: previousStepIndex,
+                      contact: normalizedContact,
+                      status: { $in: ["accepted", "sent", "delivered", "read"] },
+                    }).lean();
 
-                  if (!previousSuccess) {
-                    await CampaignLog.updateOne(
-                      {
-                        campaignId: campaign._id,
-                        stepIndex: campaign.currentStep,
-                        contact: normalizedContact,
-                      },
-                      {
-                        $set: {
-                          templateName:
-                            String(step.template_name || "").trim() ||
-                            templateCandidates[0] ||
-                            "",
-                          status: "failed",
-                          providerStatus: "skipped_previous_step_failed",
-                          failedAt: new Date(),
-                          error:
-                            "Skipped because previous step did not complete successfully",
-                          attemptCount: DRIP_STEP_MAX_ATTEMPTS,
+                    if (!previousSuccess) {
+                      await CampaignLog.updateOne(
+                        {
+                          campaignId: campaign._id,
+                          stepIndex: campaign.currentStep,
+                          contact: normalizedContact,
                         },
-                      },
-                      { upsert: true }
-                    );
-                    stepFailedCount++;
-                    console.warn(
-                      `[SEND] Skipped ${normalizedContact} on step ${campaign.currentStep + 1}: previous step not successful`
-                    );
-                    return;
+                        {
+                          $set: {
+                            templateName:
+                              String(step.template_name || "").trim() ||
+                              templateCandidates[0] ||
+                              "",
+                            status: "failed",
+                            providerStatus: "skipped_previous_step_failed",
+                            failedAt: new Date(),
+                            error:
+                              "Skipped because previous step did not complete successfully",
+                            attemptCount: DRIP_STEP_MAX_ATTEMPTS,
+                          },
+                        },
+                        { upsert: true }
+                      );
+                      stepFailedCount++;
+                      console.warn(
+                        `[SEND] Skipped ${normalizedContact} on step ${campaign.currentStep + 1}: previous step not successful`
+                      );
+                      return;
+                    }
                   }
                 }
 
@@ -351,7 +359,42 @@ function startMongoCronJobs(): void {
                 );
 
                 if (!sendResult?.success) {
-                  throw new Error(sendResult?.error || "Template send failed");
+                  const sendError = sendResult?.error || "Template send failed";
+                  await CampaignLog.updateOne(
+                    {
+                      campaignId: campaign._id,
+                      stepIndex: campaign.currentStep,
+                      contact: normalizedContact,
+                    },
+                    {
+                      $set: {
+                        templateName: template_name,
+                        messageId: sendResult?.messageId || undefined,
+                        status: "failed",
+                        providerStatus: sendResult?.provider_status || "failed",
+                        failedAt: new Date(),
+                        error: sendError,
+                        sendAttemptedAt: new Date(),
+                        attemptedLanguage: sendResult?.attempted_language || undefined,
+                        providerHttpStatus:
+                          typeof sendResult?.provider_http_status === "number"
+                            ? sendResult.provider_http_status
+                            : undefined,
+                        providerErrorCode: sendResult?.provider_error_code
+                          ? String(sendResult.provider_error_code)
+                          : undefined,
+                        requestPayload: sendResult?.request_payload || null,
+                        providerResponse: sendResult?.provider_response || null,
+                        metaAccepted: false,
+                        metaAcceptedAt: null,
+                        attemptCount: previousAttemptCount + 1,
+                      },
+                    },
+                    { upsert: true }
+                  );
+                  stepFailedCount++;
+                  console.error(`[SEND ERROR]`, normalizedContact, sendError);
+                  return;
                 }
 
                 const providerStatus = String(
@@ -377,6 +420,19 @@ function startMongoCronJobs(): void {
                       status: normalizedStatus,
                       providerStatus,
                       sentAt: new Date(),
+                      sendAttemptedAt: new Date(),
+                      attemptedLanguage: sendResult.attempted_language || undefined,
+                      providerHttpStatus:
+                        typeof sendResult.provider_http_status === "number"
+                          ? sendResult.provider_http_status
+                          : undefined,
+                      providerErrorCode: sendResult.provider_error_code
+                        ? String(sendResult.provider_error_code)
+                        : undefined,
+                      requestPayload: sendResult.request_payload || null,
+                      providerResponse: sendResult.provider_response || null,
+                      metaAccepted: Boolean(sendResult.messageId),
+                      metaAcceptedAt: sendResult.messageId ? new Date() : null,
                       failedAt: null,
                       error: null,
                       attemptCount: previousAttemptCount + 1,
@@ -409,6 +465,9 @@ function startMongoCronJobs(): void {
                       providerStatus: "failed",
                       failedAt: new Date(),
                       error: errorMessage,
+                      sendAttemptedAt: new Date(),
+                      metaAccepted: false,
+                      metaAcceptedAt: null,
                       attemptCount: previousAttemptCount + 1,
                     },
                   },

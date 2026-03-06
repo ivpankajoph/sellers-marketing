@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { getAuthHeaders } from "@/contexts/AuthContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type WebhookConfig = {
   callbackUrl: string;
@@ -22,6 +28,7 @@ type WebhookEvent = {
   errorTitle?: string;
   errorMessage?: string;
   errorDetails?: string;
+  rawStatus?: unknown;
 };
 
 type WebhookEventsResponse = {
@@ -55,6 +62,9 @@ export default function WebhookEvents() {
   const [messageIdFilter, setMessageIdFilter] = useState("");
   const [recipientFilter, setRecipientFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerTitle, setViewerTitle] = useState("Webhook Payload");
+  const [viewerContent, setViewerContent] = useState("");
 
   const fetchConfig = useCallback(async () => {
     const res = await fetch("/api/webhook/whatsapp/config", {
@@ -131,6 +141,33 @@ export default function WebhookEvents() {
     }
   };
 
+  const toPrettyJson = (value: unknown): string => {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const openViewer = (title: string, payload: unknown) => {
+    setViewerTitle(title);
+    setViewerContent(toPrettyJson(payload));
+    setViewerOpen(true);
+  };
+
+  const downloadViewerJson = () => {
+    if (!viewerContent) return;
+    const blob = new Blob([viewerContent], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "meta-webhook-payload.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
@@ -204,14 +241,32 @@ export default function WebhookEvents() {
             <h2 className="text-lg font-semibold text-slate-900">
               Delivery Status Events ({total})
             </h2>
-            <button
-              type="button"
-              onClick={() => void fetchEvents(false)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm bg-white hover:bg-slate-50"
-              disabled={refreshing}
-            >
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  openViewer(
+                    "Loaded Webhook Events (Full JSON)",
+                    events.map((event) => ({
+                      ...event,
+                      rawStatus: event.rawStatus ?? {},
+                    }))
+                  )
+                }
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm bg-white hover:bg-slate-50"
+                disabled={events.length === 0}
+              >
+                View Full JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchEvents(false)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm bg-white hover:bg-slate-50"
+                disabled={refreshing}
+              >
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -282,7 +337,10 @@ export default function WebhookEvents() {
           ) : null}
 
           {!loading && !error ? (
-            <div className="overflow-auto border border-slate-200 rounded-lg">
+            <div
+              className="max-h-[62vh] overflow-x-scroll overflow-y-scroll border border-slate-200 rounded-lg"
+              style={{ scrollbarGutter: "stable both-edges" }}
+            >
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left">
                   <tr>
@@ -291,12 +349,13 @@ export default function WebhookEvents() {
                     <th className="px-3 py-2">Recipient</th>
                     <th className="px-3 py-2">Message ID</th>
                     <th className="px-3 py-2">Error</th>
+                    <th className="px-3 py-2">Meta Data</th>
                   </tr>
                 </thead>
                 <tbody>
                   {events.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                      <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
                         No webhook status events found.
                       </td>
                     </tr>
@@ -320,6 +379,33 @@ export default function WebhookEvents() {
                             {event.errorDetails || event.errorMessage || "-"}
                           </div>
                         </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openViewer(
+                                `Meta Webhook Event - ${event.messageId || event.id}`,
+                                {
+                                  id: event.id,
+                                  messageId: event.messageId,
+                                  recipientId: event.recipientId,
+                                  status: event.status,
+                                  statusTimestamp: event.statusTimestamp,
+                                  webhookReceivedAt: event.webhookReceivedAt,
+                                  phoneNumberId: event.phoneNumberId,
+                                  errorCode: event.errorCode,
+                                  errorTitle: event.errorTitle,
+                                  errorMessage: event.errorMessage,
+                                  errorDetails: event.errorDetails,
+                                  rawStatus: event.rawStatus ?? {},
+                                }
+                              )
+                            }
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs bg-white hover:bg-slate-50"
+                          >
+                            View Full Data
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -329,6 +415,37 @@ export default function WebhookEvents() {
           ) : null}
         </section>
       </div>
+
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{viewerTitle}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex justify-end gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => void copyText(viewerContent)}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm bg-white hover:bg-slate-50"
+            >
+              Copy JSON
+            </button>
+            <button
+              type="button"
+              onClick={downloadViewerJson}
+              className="rounded-md bg-slate-900 text-white px-3 py-2 text-sm"
+            >
+              Download JSON
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-200 bg-slate-950 p-3">
+            <pre className="text-xs text-slate-100 whitespace-pre">
+              {viewerContent || "{}"}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

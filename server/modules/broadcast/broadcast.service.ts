@@ -62,6 +62,11 @@ export interface SendMessageResult {
   template_name?: string | null;
   phone_number?: string | null;
   provider_status?: string | null;
+  provider_http_status?: number | null;
+  provider_response?: Record<string, any> | null;
+  request_payload?: Record<string, any> | null;
+  attempted_language?: string | null;
+  provider_error_code?: number | string | null;
 }
 
 function getWhatsAppCredentials(): {
@@ -225,6 +230,194 @@ function isHttpUrl(value?: string | null): boolean {
   return Boolean(value && /^https?:\/\//i.test(value));
 }
 
+const MEDIA_ID_CACHE_TTL_MS = Number(
+  process.env.WHATSAPP_MEDIA_ID_CACHE_TTL_MS || 6 * 60 * 60 * 1000
+);
+const mediaIdCache = new Map<string, { mediaId: string; expiresAt: number }>();
+const mediaIdUploadInFlight = new Map<string, Promise<string | null>>();
+
+function isMediaWeblinkFailure(error?: string): boolean {
+  if (!error) return false;
+  return /131053|media upload error|weblink failed|http code 403|forbidden/i.test(
+    error
+  );
+}
+
+function getMediaCacheKey(
+  mediaType: "image" | "video" | "document",
+  mediaUrl: string
+): string {
+  return `${mediaType}:${String(mediaUrl || "").trim()}`;
+}
+
+async function uploadMediaFromUrlToMeta(
+  mediaUrl: string,
+  mediaType: "image" | "video" | "document"
+): Promise<string | null> {
+  const credentials = getWhatsAppCredentials();
+  if (!credentials) return null;
+
+  try {
+    const sourceResponse = await fetch(mediaUrl);
+    if (!sourceResponse.ok) {
+      console.error(
+        `[SendTemplate] Failed to download media for re-upload: ${sourceResponse.status} ${sourceResponse.statusText}`
+      );
+      return null;
+    }
+
+    const mediaBuffer = await sourceResponse.arrayBuffer();
+    const contentTypeHeader =
+      sourceResponse.headers.get("content-type") || "";
+    const fallbackMime =
+      mediaType === "video"
+        ? "video/mp4"
+        : mediaType === "document"
+          ? "application/pdf"
+          : "image/jpeg";
+    const mimeType = contentTypeHeader.split(";")[0].trim() || fallbackMime;
+    const extension =
+      mediaType === "video" ? "mp4" : mediaType === "document" ? "pdf" : "jpg";
+
+    const formData = new FormData();
+    formData.append("messaging_product", "whatsapp");
+    formData.append(
+      "file",
+      new Blob([mediaBuffer], { type: mimeType }),
+      `template-header-${Date.now()}.${extension}`
+    );
+
+    const uploadResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${credentials.phoneNumberId}/media`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${credentials.token}`,
+        },
+        body: formData,
+      }
+    );
+
+    const uploadText = await uploadResponse.text();
+    let uploadData: any = {};
+    try {
+      uploadData = uploadText ? JSON.parse(uploadText) : {};
+    } catch {
+      uploadData = { raw: uploadText };
+    }
+
+    if (uploadResponse.ok && uploadData?.id) {
+      console.log(
+        `[SendTemplate] Media uploaded to Meta successfully | mediaId=${uploadData.id}`
+      );
+      return String(uploadData.id);
+    }
+
+    console.error(
+      `[SendTemplate] Media upload to Meta failed:`,
+      JSON.stringify(uploadData)
+    );
+    return null;
+  } catch (error) {
+    console.error("[SendTemplate] Media upload fallback failed:", error);
+    return null;
+  }
+}
+
+async function getOrUploadMediaId(
+  mediaUrl: string,
+  mediaType: "image" | "video" | "document"
+): Promise<string | null> {
+  const cacheKey = getMediaCacheKey(mediaType, mediaUrl);
+  const now = Date.now();
+  const cached = mediaIdCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.mediaId;
+  }
+
+  if (cached && cached.expiresAt <= now) {
+    mediaIdCache.delete(cacheKey);
+  }
+
+  const inFlight = mediaIdUploadInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const uploadPromise = (async () => {
+    const mediaId = await uploadMediaFromUrlToMeta(mediaUrl, mediaType);
+    if (mediaId) {
+      mediaIdCache.set(cacheKey, {
+        mediaId,
+        expiresAt: now + Math.max(MEDIA_ID_CACHE_TTL_MS, 60_000),
+      });
+    }
+    return mediaId;
+  })();
+
+  mediaIdUploadInFlight.set(cacheKey, uploadPromise);
+  try {
+    return await uploadPromise;
+  } finally {
+    mediaIdUploadInFlight.delete(cacheKey);
+  }
+}
+
+function extractHeaderMediaLink(
+  components: templateService.TemplateComponent[],
+  mediaType: "image" | "video" | "document"
+): string | undefined {
+  for (const component of components) {
+    if (component.type !== "header" || !Array.isArray(component.parameters)) {
+      continue;
+    }
+
+    for (const param of component.parameters as any[]) {
+      if (param?.type !== mediaType) continue;
+      if (mediaType === "image" && isHttpUrl(param?.image?.link)) {
+        return String(param.image.link);
+      }
+      if (mediaType === "video" && isHttpUrl(param?.video?.link)) {
+        return String(param.video.link);
+      }
+      if (mediaType === "document" && isHttpUrl(param?.document?.link)) {
+        return String(param.document.link);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function replaceHeaderMediaLinkWithId(
+  components: templateService.TemplateComponent[],
+  mediaType: "image" | "video" | "document",
+  mediaId: string
+): templateService.TemplateComponent[] {
+  return components.map((component) => {
+    if (component.type !== "header" || !Array.isArray(component.parameters)) {
+      return component;
+    }
+
+    const newParameters = (component.parameters as any[]).map((param) => {
+      if (param?.type !== mediaType) return param;
+
+      if (mediaType === "video") {
+        return { type: "video", video: { id: mediaId } };
+      }
+      if (mediaType === "document") {
+        return { type: "document", document: { id: mediaId, filename: "template-header" } };
+      }
+      return { type: "image", image: { id: mediaId } };
+    });
+
+    return {
+      ...component,
+      parameters: newParameters,
+    };
+  });
+}
+
 function extractPlaceholderTokens(text?: string): string[] {
   if (!text) return [];
 
@@ -347,6 +540,11 @@ function withSendMetadata(
     error?: string;
     messageId?: string;
     messageStatus?: string;
+    providerHttpStatus?: number;
+    providerResponse?: Record<string, any>;
+    requestPayload?: Record<string, any>;
+    attemptedLanguage?: string;
+    errorCode?: number | string;
   },
   templateName: string,
   phone: string
@@ -355,10 +553,18 @@ function withSendMetadata(
     success: result.success,
     messageId: result.messageId,
     error: result.error,
-    error_code: result.success ? null : 'template_send_failed',
+    error_code: result.success ? null : (result.errorCode ?? "template_send_failed"),
     template_name: templateName,
     phone_number: phone,
     provider_status: result.messageStatus || null,
+    provider_http_status:
+      typeof result.providerHttpStatus === "number"
+        ? result.providerHttpStatus
+        : null,
+    provider_response: result.providerResponse || null,
+    request_payload: result.requestPayload || null,
+    attempted_language: result.attemptedLanguage || null,
+    provider_error_code: result.errorCode ?? null,
   };
 }
 
@@ -384,6 +590,10 @@ export async function sendTemplateMessage(
   const languageCode = templateRecord?.language || 'en_US';
   const normalizedHeaderType = String(templateRecord?.headerType || "").toLowerCase();
   const allowLanguageFallback = options?.allowLanguageFallback !== false;
+  const mediaHeaderTypes = ["image", "video", "document"] as const;
+  const currentMediaHeaderType = mediaHeaderTypes.find(
+    (type) => type === normalizedHeaderType
+  );
 
   if (
     (normalizedHeaderType === "image" ||
@@ -407,15 +617,33 @@ export async function sendTemplateMessage(
     name: contactName,
     phone: formattedPhone,
   });
+  let componentsForSend = components;
+
+  if (currentMediaHeaderType) {
+    const mediaLink = extractHeaderMediaLink(components, currentMediaHeaderType);
+    if (mediaLink) {
+      const mediaId = await getOrUploadMediaId(mediaLink, currentMediaHeaderType);
+      if (mediaId) {
+        componentsForSend = replaceHeaderMediaLinkWithId(
+          components,
+          currentMediaHeaderType,
+          mediaId
+        );
+        console.log(
+          `[SendTemplate] Using uploaded media ID for "${resolvedTemplateName}" (${currentMediaHeaderType})`
+        );
+      }
+    }
+  }
 
   console.log(
-    `[SendTemplate] Sending "${resolvedTemplateName}" with ${components.length} component(s)`
+    `[SendTemplate] Sending "${resolvedTemplateName}" with ${componentsForSend.length} component(s)`
   );
 
   let result = await templateService.sendTemplateMessage(formattedPhone, {
     name: resolvedTemplateName,
     languageCode,
-    components: components.length > 0 ? components : undefined,
+    components: componentsForSend.length > 0 ? componentsForSend : undefined,
   }, { allowLanguageFallback });
 
   const parameterMismatch = Boolean(
@@ -425,7 +653,7 @@ export async function sendTemplateMessage(
       )
   );
 
-  if (!result.success && parameterMismatch && components.length === 0) {
+  if (!result.success && parameterMismatch && componentsForSend.length === 0) {
     const expectedMatch = result.error?.match(/expected number of params\s*\((\d+)\)/i);
     const parsedCount = expectedMatch ? Number(expectedMatch[1]) : 1;
     const safeCount = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 1;
@@ -449,6 +677,40 @@ export async function sendTemplateMessage(
       languageCode,
       components: fallbackComponents,
     }, { allowLanguageFallback });
+  }
+
+  if (
+    !result.success &&
+    currentMediaHeaderType &&
+    isMediaWeblinkFailure(result.error)
+  ) {
+    const mediaLink = extractHeaderMediaLink(components, currentMediaHeaderType);
+    if (mediaLink) {
+      console.log(
+        `[SendTemplate] Media link failed for "${resolvedTemplateName}". Retrying via uploaded media ID fallback.`
+      );
+      const mediaId = await getOrUploadMediaId(
+        mediaLink,
+        currentMediaHeaderType
+      );
+      if (mediaId) {
+        const idComponents = replaceHeaderMediaLinkWithId(
+          components,
+          currentMediaHeaderType,
+          mediaId
+        );
+
+        result = await templateService.sendTemplateMessage(
+          formattedPhone,
+          {
+            name: resolvedTemplateName,
+            languageCode,
+            components: idComponents,
+          },
+          { allowLanguageFallback }
+        );
+      }
+    }
   }
 
   return withSendMetadata(result, resolvedTemplateName, formattedPhone);

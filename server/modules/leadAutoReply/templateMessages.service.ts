@@ -17,9 +17,9 @@ export interface TemplateParameter {
   parameter_name?: string; // For named parameters like {{name}}
   currency?: { fallback_value: string; code: string; amount_1000: number };
   date_time?: { fallback_value: string };
-  image?: { link: string };
-  video?: { link: string };
-  document?: { link: string; filename: string };
+  image?: { link?: string; id?: string };
+  video?: { link?: string; id?: string };
+  document?: { link?: string; id?: string; filename?: string };
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -42,11 +42,14 @@ function isValidTemplateParameter(
     case "text":
       return isNonEmptyString(param.text);
     case "image":
-      return isNonEmptyString(param.image?.link);
+      return isNonEmptyString(param.image?.link) || isNonEmptyString(param.image?.id);
     case "video":
-      return isNonEmptyString(param.video?.link);
+      return isNonEmptyString(param.video?.link) || isNonEmptyString(param.video?.id);
     case "document":
-      return isNonEmptyString(param.document?.link);
+      return (
+        isNonEmptyString(param.document?.link) ||
+        isNonEmptyString(param.document?.id)
+      );
     case "currency": {
       const amount = param.currency?.amount_1000;
       return (
@@ -390,16 +393,23 @@ function getWhatsAppCredentials(): {
 //   };
 // }
 
-export async function sendTemplateMessage(
-  to: string,
-  template: TemplateConfig,
-  options?: { allowLanguageFallback?: boolean }
-): Promise<{
+export interface TemplateSendResult {
   success: boolean;
   error?: string;
   messageId?: string;
   messageStatus?: string;
-}> {
+  providerHttpStatus?: number;
+  providerResponse?: Record<string, any>;
+  requestPayload?: Record<string, any>;
+  attemptedLanguage?: string;
+  errorCode?: string | number;
+}
+
+export async function sendTemplateMessage(
+  to: string,
+  template: TemplateConfig,
+  options?: { allowLanguageFallback?: boolean }
+): Promise<TemplateSendResult> {
   console.log("[TemplateMessage] ===== START =====");
   console.log("[TemplateMessage] To:", to);
   console.log(
@@ -428,6 +438,8 @@ export async function sendTemplateMessage(
     "[TemplateMessage] Language attempt order:",
     languageCodesToTry
   );
+
+  let lastAttempt: Partial<TemplateSendResult> = {};
 
   for (const langCode of languageCodesToTry) {
     console.log("--------------------------------------------");
@@ -460,6 +472,7 @@ export async function sendTemplateMessage(
                 return {
                   success: false,
                   error: "Invalid WhatsApp template parameters",
+                  attemptedLanguage: langCode,
                 };
               }
             }
@@ -506,7 +519,20 @@ export async function sendTemplateMessage(
       );
 
       const responseText = await response.text();
-      const data = responseText ? JSON.parse(responseText) : {};
+      let data: Record<string, any> = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = { raw: responseText };
+      }
+
+      lastAttempt = {
+        providerHttpStatus: response.status,
+        providerResponse: data,
+        requestPayload: messagePayload,
+        attemptedLanguage: langCode,
+        errorCode: data?.error?.code,
+      };
 
       console.log("[TemplateMessage] HTTP Status:", response.status);
       console.log("[TemplateMessage] Response:", JSON.stringify(data, null, 2));
@@ -520,6 +546,7 @@ export async function sendTemplateMessage(
           success: true,
           messageId: data.messages[0].id,
           messageStatus: data.messages?.[0]?.message_status,
+          ...lastAttempt,
         };
       }
 
@@ -548,20 +575,26 @@ export async function sendTemplateMessage(
         errorMsg.toLowerCase().includes("parameter format does not match")
       ) {
         console.error("[TemplateMessage] ❌ Parameter mismatch - check template variables");
-        return { 
-          success: false, 
-          error: `${errorMsg}. Template requires variables but none/incorrect were provided.` 
+        return {
+          success: false,
+          error: `${errorMsg}. Template requires variables but none/incorrect were provided.`,
+          ...lastAttempt,
         };
       }
 
       // Other errors - don't retry
       console.log("[TemplateMessage] ===== END =====");
-      return { success: false, error: errorMsg };
+      return { success: false, error: errorMsg, ...lastAttempt };
     } catch (error) {
       console.error("[TemplateMessage] ❌ Fetch Exception:", error);
+      lastAttempt = {
+        requestPayload: messagePayload,
+        attemptedLanguage: langCode,
+      };
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
+        ...lastAttempt,
       };
     }
   }
@@ -574,6 +607,7 @@ export async function sendTemplateMessage(
   return {
     success: false,
     error: `Template "${metaTemplateName}" not found in Meta`,
+    ...lastAttempt,
   };
 }
 

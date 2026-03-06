@@ -741,18 +741,104 @@ export async function registerRoutes(
     if (fromDate || toDate) {
       filter.createdAt = {};
       if (fromDate) filter.createdAt.$gte = new Date(fromDate as string);
-      if (toDate) filter.createdAt.$lte = new Date(toDate as string);
+      if (toDate) {
+        const endDate = new Date(toDate as string);
+        endDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = endDate;
+      }
     }
 
     const campaigns = await mongodb.Campaign.find(filter)
       .sort({ [sortBy as string]: sortOrder === "asc" ? 1 : -1 })
       .skip((+page - 1) * +limit)
-      .limit(+limit);
+      .limit(+limit)
+      .lean();
 
     const total = await mongodb.Campaign.countDocuments(filter);
 
+    const campaignIds = campaigns
+      .map((campaign: any) => campaign?._id)
+      .filter(Boolean);
+
+    const metricsByCampaign = new Map<string, any>();
+    if (campaignIds.length > 0) {
+      const metrics = await mongodb.CampaignLog.aggregate([
+        {
+          $match: {
+            campaignId: { $in: campaignIds },
+          },
+        },
+        {
+          $group: {
+            _id: "$campaignId",
+            attempted: { $sum: 1 },
+            accepted: {
+              $sum: {
+                $cond: [
+                  { $in: ["$status", ["accepted", "sent", "delivered", "read"]] },
+                  1,
+                  0,
+                ],
+              },
+            },
+            delivered: {
+              $sum: {
+                $cond: [{ $in: ["$status", ["delivered", "read"]] }, 1, 0],
+              },
+            },
+            read: {
+              $sum: { $cond: [{ $eq: ["$status", "read"] }, 1, 0] },
+            },
+            failed: {
+              $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
+            },
+            pending: {
+              $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+            },
+            metaAccepted: {
+              $sum: { $cond: [{ $eq: ["$metaAccepted", true] }, 1, 0] },
+            },
+            lastAttemptAt: { $max: "$sendAttemptedAt" },
+            lastWebhookAt: { $max: "$updatedAt" },
+          },
+        },
+      ]);
+
+      for (const metric of metrics) {
+        metricsByCampaign.set(String(metric._id), metric);
+      }
+    }
+
+    const data = campaigns.map((campaign: any) => {
+      const metric = metricsByCampaign.get(String(campaign?._id)) || {};
+      const contactsCount = Array.isArray(campaign?.contacts)
+        ? campaign.contacts.length
+        : 0;
+      const stepsCount = Array.isArray(campaign?.steps) ? campaign.steps.length : 0;
+      const expectedMessages = contactsCount * stepsCount;
+      return {
+        ...campaign,
+        reportMetrics: {
+          expectedMessages,
+          attempted: Number(metric.attempted || 0),
+          accepted: Number(metric.accepted || 0),
+          delivered: Number(metric.delivered || 0),
+          read: Number(metric.read || 0),
+          failed: Number(metric.failed || 0),
+          pending: Number(metric.pending || 0),
+          notAttempted: Math.max(
+            0,
+            expectedMessages - Number(metric.attempted || 0)
+          ),
+          metaAccepted: Number(metric.metaAccepted || 0),
+          lastAttemptAt: metric.lastAttemptAt || null,
+          lastWebhookAt: metric.lastWebhookAt || null,
+        },
+      };
+    });
+
     res.json({
-      data: campaigns,
+      data,
       meta: {
         total,
         page: +page,
@@ -818,6 +904,231 @@ export async function registerRoutes(
     const total = await mongodb.CampaignLog.countDocuments(filter);
 
     res.json({ data: logs, total });
+  });
+
+  // GET /api/reports/drip-campaigns/:campaignId/details
+  app.get("/api/reports/drip-campaigns/:id/details", async (req, res) => {
+    try {
+      const campaignId = String(req.params.id || "").trim();
+      const objectId = mongoose.Types.ObjectId.isValid(campaignId)
+        ? new mongoose.Types.ObjectId(campaignId)
+        : null;
+
+      const campaignQuery = objectId
+        ? { $or: [{ _id: objectId }, { id: campaignId }] }
+        : { id: campaignId };
+
+      const campaign = await mongodb.Campaign.findOne(campaignQuery).lean();
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const campaignIdFilter = objectId
+        ? { $in: [objectId, campaignId] }
+        : campaignId;
+
+      const logs = await mongodb.CampaignLog.find({ campaignId: campaignIdFilter })
+        .sort({ stepIndex: 1, contact: 1, createdAt: 1 })
+        .lean();
+
+      const messageIds = Array.from(
+        new Set(
+          logs
+            .map((log: any) => String(log?.messageId || "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      const webhookEvents = messageIds.length
+        ? await mongodb.WebhookStatusEvent.find({ messageId: { $in: messageIds } })
+            .sort({ statusTimestamp: 1, createdAt: 1 })
+            .lean()
+        : [];
+
+      const eventsByMessageId = new Map<string, any[]>();
+      for (const event of webhookEvents) {
+        const messageId = String(event?.messageId || "").trim();
+        if (!messageId) continue;
+        const existing = eventsByMessageId.get(messageId) || [];
+        existing.push(event);
+        eventsByMessageId.set(messageId, existing);
+      }
+
+      const normalizedContacts = Array.from(
+        new Set(
+          (Array.isArray((campaign as any).contacts) ? (campaign as any).contacts : [])
+            .map((contact: any) => String(contact || "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      const logsByStepContact = new Map<string, any>();
+      for (const log of logs) {
+        const key = `${Number(log?.stepIndex || 0)}::${String(log?.contact || "").trim()}`;
+        logsByStepContact.set(key, log);
+      }
+
+      const steps = (Array.isArray((campaign as any).steps) ? (campaign as any).steps : []).map(
+        (step: any, stepIndex: number) => {
+          const contacts = normalizedContacts.map((contact) => {
+            const key = `${stepIndex}::${contact}`;
+            const log = logsByStepContact.get(key);
+            const messageId = String(log?.messageId || "").trim();
+            const timeline = messageId ? eventsByMessageId.get(messageId) || [] : [];
+            const latestEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+
+            const baseStatus = String(log?.status || "not_attempted").toLowerCase();
+            const providerStatus = String(log?.providerStatus || "").toLowerCase();
+            const webhookStatus = String(latestEvent?.status || "").toLowerCase();
+
+            const finalMetaStatus =
+              webhookStatus ||
+              providerStatus ||
+              (baseStatus === "accepted" ? "sent" : baseStatus);
+
+            return {
+              contact,
+              status: baseStatus,
+              providerStatus: providerStatus || null,
+              finalMetaStatus: finalMetaStatus || "not_attempted",
+              attemptCount: Number(log?.attemptCount || 0),
+              templateName: log?.templateName || step?.template_name || null,
+              templateId: step?.templateId || null,
+              messageId: messageId || null,
+              sentAt: log?.sentAt || null,
+              deliveredAt: log?.deliveredAt || null,
+              readAt: log?.readAt || null,
+              failedAt: log?.failedAt || null,
+              sendAttemptedAt: log?.sendAttemptedAt || null,
+              attemptedLanguage: log?.attemptedLanguage || null,
+              providerHttpStatus:
+                typeof log?.providerHttpStatus === "number"
+                  ? log.providerHttpStatus
+                  : null,
+              providerErrorCode: log?.providerErrorCode || null,
+              error: log?.error || null,
+              metaAccepted: Boolean(log?.metaAccepted),
+              metaAcceptedAt: log?.metaAcceptedAt || null,
+              requestPayload: log?.requestPayload || null,
+              providerResponse: log?.providerResponse || null,
+              webhookTimeline: timeline.map((event: any) => ({
+                id: event?.id || null,
+                status: event?.status || null,
+                statusTimestamp: event?.statusTimestamp || null,
+                webhookReceivedAt: event?.webhookReceivedAt || null,
+                errorCode: event?.errorCode || null,
+                errorTitle: event?.errorTitle || null,
+                errorMessage: event?.errorMessage || null,
+                errorDetails: event?.errorDetails || null,
+                rawStatus: event?.rawStatus || null,
+              })),
+            };
+          });
+
+          const attempted = contacts.filter((item) => item.status !== "not_attempted").length;
+          const failed = contacts.filter(
+            (item) => item.status === "failed" || item.finalMetaStatus === "failed"
+          ).length;
+          const read = contacts.filter(
+            (item) => item.status === "read" || item.finalMetaStatus === "read"
+          ).length;
+          const delivered = contacts.filter(
+            (item) =>
+              item.status === "delivered" ||
+              item.status === "read" ||
+              item.finalMetaStatus === "delivered" ||
+              item.finalMetaStatus === "read"
+          ).length;
+          const accepted = contacts.filter((item) =>
+            ["accepted", "sent", "delivered", "read"].includes(item.status) ||
+            ["accepted", "sent", "delivered", "read"].includes(item.finalMetaStatus)
+          ).length;
+          const pending = contacts.filter(
+            (item) =>
+              item.status === "pending" ||
+              item.finalMetaStatus === "pending" ||
+              item.finalMetaStatus === "accepted" ||
+              item.finalMetaStatus === "sent"
+          ).length;
+          const notAttempted = contacts.length - attempted;
+
+          return {
+            stepIndex,
+            stepOrder: stepIndex + 1,
+            templateName: step?.template_name || null,
+            templateId: step?.templateId || null,
+            scheduleType: step?.scheduleType || null,
+            delayDays: Number(step?.delayDays || 0),
+            delayHours: Number(step?.delayHours || 0),
+            specificDate: step?.specificDate || null,
+            specificTime: step?.specificTime || null,
+            totals: {
+              contacts: contacts.length,
+              attempted,
+              accepted,
+              delivered,
+              read,
+              failed,
+              pending,
+              notAttempted,
+            },
+            contacts,
+          };
+        }
+      );
+
+      const stepTotals = steps.reduce(
+        (acc: any, step: any) => {
+          acc.expectedMessages += Number(step?.totals?.contacts || 0);
+          acc.attempted += Number(step?.totals?.attempted || 0);
+          acc.accepted += Number(step?.totals?.accepted || 0);
+          acc.delivered += Number(step?.totals?.delivered || 0);
+          acc.read += Number(step?.totals?.read || 0);
+          acc.failed += Number(step?.totals?.failed || 0);
+          acc.pending += Number(step?.totals?.pending || 0);
+          acc.notAttempted += Number(step?.totals?.notAttempted || 0);
+          return acc;
+        },
+        {
+          expectedMessages: 0,
+          attempted: 0,
+          accepted: 0,
+          delivered: 0,
+          read: 0,
+          failed: 0,
+          pending: 0,
+          notAttempted: 0,
+        }
+      );
+
+      const webhookSummary = webhookEvents.reduce((acc: Record<string, number>, event: any) => {
+        const key = String(event?.status || "unknown").toLowerCase();
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+
+      return res.json({
+        campaign: {
+          ...campaign,
+          contactsCount: normalizedContacts.length,
+          stepsCount: Array.isArray((campaign as any).steps)
+            ? (campaign as any).steps.length
+            : 0,
+        },
+        totals: {
+          ...stepTotals,
+          totalContacts: normalizedContacts.length,
+          totalSteps: steps.length,
+          metaAccepted: logs.filter((log: any) => Boolean(log?.metaAccepted)).length,
+          webhookEvents: webhookEvents.length,
+        },
+        webhookSummary,
+        steps,
+      });
+    } catch (error) {
+      console.error("[DripReport] Failed to fetch campaign details:", error);
+      return res.status(500).json({ error: "Failed to fetch campaign details" });
+    }
   });
 
 

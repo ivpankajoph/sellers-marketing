@@ -13,6 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Upload,
+  Download,
   Send,
   Users,
   Loader2,
@@ -74,6 +75,21 @@ const REQUIRED_EXCEL_COLUMNS = [
   "Secondary phone number",
   "WhatsApp number",
 ];
+
+const SAMPLE_TEMPLATE_ROW: Record<string, string> = {
+  Created: "2026-03-05 17:30:00",
+  Name: "John Doe",
+  "Email address": "john@example.com",
+  Source: "Website",
+  Form: "Lead Form",
+  Channel: "WhatsApp",
+  Stage: "New",
+  Owner: "Admin",
+  Labels: "VIP;Interested",
+  Phone: "9876543210",
+  "Secondary phone number": "",
+  "WhatsApp number": "919876543210",
+};
 
 export default function Broadcast() {
   const [, setLocation] = useLocation();
@@ -232,6 +248,26 @@ export default function Broadcast() {
     if (file) {
       importExcelMutation.mutate(file);
     }
+  };
+
+  const handleDownloadSampleTemplate = () => {
+    const escapeCsv = (value: string) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const header = REQUIRED_EXCEL_COLUMNS.map(escapeCsv).join(",");
+    const sampleRow = REQUIRED_EXCEL_COLUMNS.map((col) =>
+      escapeCsv(SAMPLE_TEMPLATE_ROW[col] || "")
+    ).join(",");
+    const csv = `${header}\n${sampleRow}\n`;
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Broadcast_Import_Sample_Template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Sample template downloaded");
   };
 
   const handleTemplateSelect = (templateId: string) => {
@@ -588,10 +624,10 @@ export default function Broadcast() {
                     </DialogHeader>
 
                     <div className="mt-4 border rounded-md p-3 bg-muted/50">
-                      <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
+                      <ul className="list-disc pl-5 text-sm space-y-1 max-h-48 overflow-y-auto">
                         {REQUIRED_EXCEL_COLUMNS.map((col) => (
                           <li key={col} className="font-mono">
-                            • {col}
+                            {col}
                           </li>
                         ))}
                       </ul>
@@ -605,24 +641,40 @@ export default function Broadcast() {
                       </AlertDescription>
                     </Alert>
 
-                    <DialogFooter className="mt-4">
+                    <DialogFooter className="mt-4 !flex-col gap-2">
                       <Button
-                        variant="outline"
-                        onClick={() => setShowExcelFormatDialog(false)}
+                        type="button"
+                        variant="secondary"
+                        onClick={handleDownloadSampleTemplate}
+                        className="w-full"
                       >
-                        Cancel
+                        <Download className="mr-2 h-4 w-4" />
+                        Download Sample Template
                       </Button>
 
-                      <Button
-                        onClick={() => {
-                          setShowExcelFormatDialog(false);
-                          setTimeout(() => {
-                            fileInputRef.current?.click();
-                          }, 100);
-                        }}
-                      >
-                        Proceed to Upload
-                      </Button>
+                      <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowExcelFormatDialog(false)}
+                          className="w-full sm:w-auto"
+                        >
+                          Cancel
+                        </Button>
+
+                        <Button
+                          type="button"
+                          className="w-full sm:w-auto"
+                          onClick={() => {
+                            setShowExcelFormatDialog(false);
+                            setTimeout(() => {
+                              fileInputRef.current?.click();
+                            }, 100);
+                          }}
+                        >
+                          Proceed to Upload
+                        </Button>
+                      </div>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>

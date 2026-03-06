@@ -297,14 +297,27 @@ function Router() {
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
       </Route>
-      <Route path="/settings/team">
-        {() => <ProtectedRoute component={TeamMembers} />}
+      <Route path="/whatsapptokens">
+        {() => <ProtectedRoute component={WhatsTokenCardMain} />}
       </Route>
-      <Route path="/settings/permissions">
-        {() => <ProtectedRoute component={Permissions} />}
+
+      <Route path="/usagedashboard">
+        {() => <ProtectedRoute component={AiUsageDashboard} />}
       </Route>
-      <Route path="/settings/whatsapp">
-        {() => <ProtectedRoute component={WhatsAppNumber} />}
+
+      <Route path="/create-whatsappflow">
+        {() => <ProtectedRoute component={WhatsAppFlowBuilder} />}
+      </Route>
+      <Route path="/create-whatsappflow/:id">
+        {() => <ProtectedRoute component={WhatsAppFlowBuilder} />}
+      </Route>
+
+      <Route path="/report-dripcampaign">
+        {() => <ProtectedRoute component={DripCampaignReport} />}
+      </Route>
+
+      <Route path="/contactusagedashboard">
+        {() => <ProtectedRoute component={ContactUsageDetail} />}
       </Route>
       <Route path="/settings/profile">
         {() => <ProtectedRoute component={ProfileDetails} />}
@@ -324,22 +337,6 @@ function Router() {
       </Route>
       <Route path="/whatsapptokens">
         {() => <ProtectedRoute component={WhatsTokenCardMain} />}
-      </Route>
-
-      <Route path="/usagedashboard">
-        {() => <ProtectedRoute component={AiUsageDashboard} />}
-      </Route>
-
-        <Route path="/create-whatsappflow">
-        {() => <ProtectedRoute component={WhatsAppFlowBuilder} />}
-      </Route>
-s
-       <Route path="/report-dripcampaign">
-        {() => <ProtectedRoute component={DripCampaignReport} />}
-      </Route>
-
-      <Route path="/contactusagedashboard">
-        {() => <ProtectedRoute component={ContactUsageDetail} />}
       </Route>
       {/* User Management */}
       <Route path="/user-management">
@@ -365,7 +362,7 @@ s
         }}
       </Route>
       <Route component={NotFound} />
-    </Switch>
+    </Switch >
   );
 }
 
